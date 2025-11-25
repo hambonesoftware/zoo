@@ -95,6 +95,13 @@ export function createElephantSkinMaterial(options = {}) {
   const toeMask = positionLocal.y.mul(-2.0).add(1.4);
   const toeColor = baseCol.mul(1.25);
 
+  // Ear interior: softly blend to a warm pink on inward-facing surfaces
+  // near the head, keeping the exterior closer to the base grey.
+  const earSideMask = positionLocal.x.abs().mul(0.7).add(0.15);
+  const earFacingMask = positionLocal.z.mul(-1.0).mul(0.9).add(0.55);
+  const earMask = earSideMask.mul(earFacingMask);
+  const earColor = color(0xf2c8c6);
+
   // Blend the colours together using the masks. Start with macroColor
   // (wrinkled base) and progressively lerp toward the regional colours.
   // We rely on the masks' magnitudes being modest so these blends are
@@ -111,9 +118,12 @@ export function createElephantSkinMaterial(options = {}) {
   const mixToe = mixTusk
     .mul(float(1.0).sub(toeMask))
     .add(toeColor.mul(toeMask));
+  const mixEar = mixToe
+    .mul(float(1.0).sub(earMask))
+    .add(earColor.mul(earMask));
 
   // Apply underside shaping and high-frequency canvas detail.
-  const finalColor = mixToe.mul(canvasBoost).mul(undersideFactor);
+  const finalColor = mixEar.mul(canvasBoost).mul(undersideFactor);
 
   material.colorNode = finalColor;
 
