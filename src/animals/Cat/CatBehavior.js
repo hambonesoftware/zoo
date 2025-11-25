@@ -1,6 +1,5 @@
 // src/animals/Cat/CatBehavior.js
 
-import * as THREE from 'three';
 import { CatLocomotion } from './CatLocomotion.js';
 
 /**
@@ -9,13 +8,13 @@ import { CatLocomotion } from './CatLocomotion.js';
  * Orchestrates procedural animation for the CatCreature:
  * - Delegates locomotion (idle + walk) to CatLocomotion
  * - Maintains a simple high-level state string for studio HUD/debugging
- * - Exposes a bone map for easy future extensions (trunk tricks, posing, etc.)
+ * - Exposes a bone map for easy future extensions (tail posing, etc.)
  */
 export class CatBehavior {
   /**
    * @param {THREE.Skeleton} skeleton
    * @param {THREE.SkinnedMesh} mesh
-   * @param {Object} opts - optional flags like { debug: true }
+   * @param {Object} opts - optional flags like { debug: true, moveSpeed: 0 }
    */
   constructor(skeleton, mesh, opts = {}) {
     this.skeleton = skeleton;
@@ -24,6 +23,7 @@ export class CatBehavior {
 
     // High-level state: 'idle', 'walk', etc.
     this.state = 'idle';
+    this.moveSpeed = typeof opts.moveSpeed === 'number' ? opts.moveSpeed : 0;
 
     // Build a simple bone map by name for convenience
     this.bones = {};
@@ -41,12 +41,25 @@ export class CatBehavior {
   }
 
   /**
-   * Called by CatLocomotion when its internal state changes.
+   * Called by CatLocomotion or external systems when its internal state changes.
    * Allows the studio UI to show a simple "top level" state.
    * @param {string} nextState
    */
   setState(nextState) {
+    const allowed = ['idle', 'walk', 'prowl', 'run'];
+    if (!allowed.includes(nextState)) return;
     this.state = nextState;
+    if (this.locomotion?.setState) {
+      this.locomotion.setState(nextState);
+    }
+  }
+
+  /**
+   * Adjust the current desired ground speed. Values > 0.05 transition to walk.
+   * @param {number} speed
+   */
+  setMoveSpeed(speed) {
+    this.moveSpeed = Math.max(0, speed);
   }
 
   /**
@@ -57,6 +70,12 @@ export class CatBehavior {
     if (!dt || !this.skeleton || !this.mesh) return;
 
     this.time += dt;
+
+    // Simple state selection driven by desired speed
+    const nextState = this.moveSpeed > 0.05 ? 'walk' : 'idle';
+    if (nextState !== this.state) {
+      this.setState(nextState);
+    }
 
     // Delegate actual motion to the locomotion layer
     if (this.locomotion && typeof this.locomotion.update === 'function') {
@@ -76,7 +95,8 @@ export class CatBehavior {
     return {
       state: this.state,
       time: this.time,
-      locomotionState: this.locomotion ? this.locomotion.state : null
+      locomotionState: this.locomotion ? this.locomotion.state : null,
+      moveSpeed: this.moveSpeed
     };
   }
 }
