@@ -136,9 +136,11 @@ export class CatGenerator {
       console.debug('[CatGenerator] rear leg radii', rearRadii);
     }
 
-        // === Material (Node-based cat skin) ===
+    // === Material (Node-based cat skin) ===
     const material = createCatSkinMaterial({
-      bodyColor: options.bodyColor
+      bodyColor: options.bodyColor,
+      accentColor: options.accentColor,
+      bellyColor: options.bellyColor
     });
 
     const mesh = new THREE.SkinnedMesh(mergedGeometry, material);

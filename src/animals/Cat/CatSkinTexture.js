@@ -2,128 +2,150 @@
 
 import * as THREE from 'three';
 
+function hexToRgb(hex) {
+  return {
+    r: (hex >> 16) & 0xff,
+    g: (hex >> 8) & 0xff,
+    b: hex & 0xff
+  };
+}
+
+function createSeededRandom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (1664525 * state + 1013904223) >>> 0;
+    return state / 0xffffffff;
+  };
+}
+
+function drawStripe(ctx, size, rand, colorString, opacity) {
+  const yBase = rand() * size;
+  const wiggle = size * 0.015;
+  const amplitude = size * (0.02 + rand() * 0.025);
+  const frequency = 2 + rand() * 2.5;
+
+  ctx.strokeStyle = colorString.replace('OPACITY', opacity.toFixed(3));
+  ctx.lineWidth = 6 + rand() * 10;
+  ctx.lineCap = 'round';
+
+  ctx.beginPath();
+  ctx.moveTo(0, yBase + (rand() - 0.5) * wiggle);
+  const steps = 10;
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const x = t * size;
+    const offset = Math.sin(t * Math.PI * frequency + rand() * Math.PI * 2) * amplitude;
+    ctx.lineTo(x, yBase + offset);
+  }
+  ctx.stroke();
+}
+
 /**
- * Create a procedural cat skin CanvasTexture.
+ * Create a procedural cat fur CanvasTexture.
  *
- * This is a purely CPU-side generator that paints a tiling-friendly,
- * slightly mottled greyscale texture with some directional "wrinkle"
- * strokes. It is intentionally cheap and generic – the heavy lifting
- * of final shading is done in CatSkinNode.js using TSL.
- *
- * The texture is designed to look OK both when used once (uv 0–1)
- * and when gently repeated (uv scaled a bit).
+ * The texture aims for a warm, readable coat with soft belly lightening and
+ * playful banding. It is deterministic via a tiny LCG so multiple cats can
+ * share the same texture while still allowing a user-provided seed.
  */
 export function createCatSkinCanvasTexture(options = {}) {
-  const size = options.size || 1024;
+  const size = options.size || 512;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) {
-    // Fallback: solid grey if 2D context is unavailable for some reason.
     const fallback = new THREE.CanvasTexture(canvas);
     fallback.needsUpdate = true;
     return fallback;
   }
 
-  // --- Base fill: mid–dark warm grey ---
-  const baseR = 115;
-  const baseG = 115;
-  const baseB = 120;
-  ctx.fillStyle = `rgb(${baseR},${baseG},${baseB})`;
+  const baseHex = options.bodyColor ?? 0xc08a57; // warm tawny
+  const accentHex = options.accentColor ?? 0x7a4d30; // muted chestnut for stripes
+  const bellyHex = options.bellyColor ?? 0xf0d9b5; // lighter underside/ear tips
+
+  const base = hexToRgb(baseHex);
+  const accent = hexToRgb(accentHex);
+  const belly = hexToRgb(bellyHex);
+
+  const rand = createSeededRandom(options.seed ?? 1234);
+
+  // --- Base fill ---
+  ctx.fillStyle = `rgb(${base.r},${base.g},${base.b})`;
   ctx.fillRect(0, 0, size, size);
 
-  // --- Large scale mottling (broad patches) ---
-  const patchCount = 220;
+  // --- Belly gradient (lighter toward the bottom) ---
+  const bellyGrad = ctx.createLinearGradient(0, size * 0.35, 0, size);
+  bellyGrad.addColorStop(0, `rgba(${belly.r},${belly.g},${belly.b},0)`);
+  bellyGrad.addColorStop(1, `rgba(${belly.r},${belly.g},${belly.b},0.6)`);
+  ctx.fillStyle = bellyGrad;
+  ctx.fillRect(0, 0, size, size);
+
+  // --- Soft mottling patches ---
+  const patchCount = 160;
   for (let i = 0; i < patchCount; i++) {
-    const cx = Math.random() * size;
-    const cy = Math.random() * size;
-    const r = (size / 20) + Math.random() * (size / 10);
-    const dark = Math.random() < 0.5;
+    const cx = rand() * size;
+    const cy = rand() * size;
+    const r = size * (0.03 + rand() * 0.06);
+    const dark = rand() < 0.5;
+    const delta = 18 + rand() * 24;
+    const rCol = base.r + (dark ? -delta : delta);
+    const gCol = base.g + (dark ? -delta : delta * 0.9);
+    const bCol = base.b + (dark ? -delta * 0.7 : delta * 0.6);
 
-    const delta = 18 + Math.random() * 20;
-    const rCol = baseR + (dark ? -delta : delta);
-    const gCol = baseG + (dark ? -delta : delta * 0.9);
-    const bCol = baseB + (dark ? -delta * 0.8 : delta * 0.5);
-
-    ctx.fillStyle = `rgba(${rCol|0},${gCol|0},${bCol|0},0.18)`;
+    ctx.fillStyle = `rgba(${rCol | 0},${gCol | 0},${bCol | 0},0.16)`;
     ctx.beginPath();
     ctx.ellipse(
       cx,
       cy,
-      r * (0.6 + Math.random() * 0.6),
-      r * (0.4 + Math.random() * 0.7),
-      Math.random() * Math.PI,
+      r * (0.7 + rand() * 0.5),
+      r * (0.5 + rand() * 0.7),
+      rand() * Math.PI,
       0,
       Math.PI * 2
     );
     ctx.fill();
   }
 
-  // --- Finer speckle noise (pores / tiny bumps) ---
-  const speckCount = size * size * 0.02; // about 2% of pixels get a small speck
-  for (let i = 0; i < speckCount; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    const radius = 0.5 + Math.random() * 1.5;
-    const delta = (Math.random() - 0.5) * 40;
-    const rCol = baseR + delta;
-    const gCol = baseG + delta;
-    const bCol = baseB + delta * 0.8;
+  // --- Accent stripes (gentle, tail-friendly bands) ---
+  const accentTemplate = `rgba(${accent.r},${accent.g},${accent.b},OPACITY)`;
+  const stripeCount = 12;
+  for (let i = 0; i < stripeCount; i++) {
+    drawStripe(ctx, size, rand, accentTemplate, 0.18 + rand() * 0.08);
+  }
 
-    ctx.fillStyle = `rgba(${rCol|0},${gCol|0},${bCol|0},0.3)`;
+  // --- Fine speckle noise for fur breakup ---
+  const speckCount = size * size * 0.01;
+  for (let i = 0; i < speckCount; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const radius = 0.4 + rand() * 1.2;
+    const delta = (rand() - 0.5) * 26;
+    const rCol = base.r + delta;
+    const gCol = base.g + delta * 0.95;
+    const bCol = base.b + delta * 0.8;
+
+    ctx.fillStyle = `rgba(${rCol | 0},${gCol | 0},${bCol | 0},0.38)`;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // --- Directional wrinkle strokes ---
-  // We paint short, semi-transparent line segments that gently curve.
-  const wrinkleLayers = 3;
-  for (let layer = 0; layer < wrinkleLayers; layer++) {
-    const strokeCount = 900 + layer * 450;
-    const alpha = 0.08 + layer * 0.02;
-    const thickness = 1 + layer;
-    const darkness = 18 + layer * 8;
-
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    for (let i = 0; i < strokeCount; i++) {
-      const startX = Math.random() * size;
-      const startY = Math.random() * size;
-
-      // Bias direction slightly to be more horizontal than vertical,
-      // roughly how wrinkles on an cat flank tend to flow.
-      const dirAngle = (Math.random() * Math.PI * 0.4) - (Math.PI * 0.2);
-      const length = (size / 40) + Math.random() * (size / 25);
-
-      const endX = startX + Math.cos(dirAngle) * length;
-      const endY = startY + Math.sin(dirAngle) * length;
-
-      const rCol = baseR - darkness;
-      const gCol = baseG - darkness;
-      const bCol = baseB - darkness * 0.8;
-
-      ctx.strokeStyle = `rgba(${rCol|0},${gCol|0},${bCol|0},${alpha.toFixed(3)})`;
-      ctx.lineWidth = thickness;
-      ctx.beginPath();
-      ctx.moveTo(startX, startY);
-      ctx.lineTo(endX, endY);
-      ctx.stroke();
-    }
-  }
+  // --- Spine shading (darker along top/back) ---
+  const spineGrad = ctx.createLinearGradient(0, 0, 0, size);
+  spineGrad.addColorStop(0, 'rgba(0,0,0,0.12)');
+  spineGrad.addColorStop(0.5, 'rgba(0,0,0,0.04)');
+  spineGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = spineGrad;
+  ctx.fillRect(0, 0, size, size);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.anisotropy = 4;
   texture.needsUpdate = true;
 
-  // We keep clamp-to-edge wrapping; we will mostly sample in 0–1 UV space.
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
 
-  // Color space: treat as sRGB so it matches other color inputs.
   if (texture.colorSpace !== undefined) {
     texture.colorSpace = THREE.SRGBColorSpace;
   }
@@ -132,6 +154,6 @@ export function createCatSkinCanvasTexture(options = {}) {
 }
 
 /**
- * Singleton instance – most cats will happily share one skin texture.
+ * Singleton instance – most cats will happily share one fur texture.
  */
 export const catSkinCanvasTexture = createCatSkinCanvasTexture();
