@@ -4,6 +4,12 @@ import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { Zoo } from './zoo/Zoo.js';
 import { animalsRegistry, getDiscoveredAnimals } from './animals/registry.js';
+import { SoundFontEngine } from './audio/SoundFontEngine.js';
+import { TheoryEngine } from './music/TheoryEngine.js';
+import { AnimalMusicBrain } from './music/AnimalMusicBrain.js';
+import { MUSIC_PROFILES, getProfileForAnimal } from './music/MusicProfiles.js';
+import { MusicEngine } from './music/MusicEngine.js';
+import { NoteHighway } from './ui/NoteHighway.js';
 
 function isWebGPUSupported() {
   try {
@@ -94,6 +100,18 @@ class App {
     this.controls = controls;
     this.renderer = renderer;
 
+    // Audio + music subsystems
+    this.soundFontEngine = new SoundFontEngine();
+    this.theoryEngine = new TheoryEngine();
+    this.noteHighway = new NoteHighway(this.soundFontEngine.getAudioContext());
+    this.musicEngine = new MusicEngine({
+      soundFontEngine: this.soundFontEngine,
+      theoryEngine: this.theoryEngine,
+      noteHighway: this.noteHighway
+    });
+    this.audioReady = false;
+    this.setupAudioBootstrap();
+
     const defaultAnimalType = 'cat';
 
     // Create the zoo with a default animal
@@ -116,6 +134,46 @@ class App {
     // Prevent context menu on right-click over canvas for nicer UX
     if (this.renderer && this.renderer.domElement) {
       this.renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+  }
+
+  async setupAudioBootstrap() {
+    const handler = async () => {
+      if (this.audioReady) return;
+      try {
+        await this.soundFontEngine.resumeContext();
+        await this.soundFontEngine.loadSoundFont('/audio/general.sf2');
+        this.configureMusicBrains();
+        this.audioReady = true;
+
+        // Expose for quick console testing
+        window.soundFontEngine = this.soundFontEngine;
+        window.musicEngine = this.musicEngine;
+      } catch (error) {
+        console.error('[Zoo] Failed to initialize audio pipeline:', error);
+      }
+    };
+
+    window.addEventListener('pointerdown', handler, { once: true });
+    window.addEventListener('keydown', handler, { once: true });
+  }
+
+  configureMusicBrains() {
+    const catProfile = getProfileForAnimal('cat') || MUSIC_PROFILES.CatCreature;
+    const elephantProfile = getProfileForAnimal('elephant') || MUSIC_PROFILES.ElephantCreature;
+
+    if (catProfile) {
+      const catBrain = new AnimalMusicBrain(catProfile);
+      this.musicEngine.registerAnimalBrain('cat', catBrain);
+      this.soundFontEngine.assignChannelForAnimal('cat', 0);
+      this.soundFontEngine.setInstrumentForAnimal('cat', catProfile.programNumber);
+    }
+
+    if (elephantProfile) {
+      const elephantBrain = new AnimalMusicBrain(elephantProfile);
+      this.musicEngine.registerAnimalBrain('elephant', elephantBrain);
+      this.soundFontEngine.assignChannelForAnimal('elephant', 1);
+      this.soundFontEngine.setInstrumentForAnimal('elephant', elephantProfile.programNumber);
     }
   }
 
@@ -206,6 +264,11 @@ class App {
 
     // Render the scene
     this.renderer.render(this.scene, this.camera);
+
+    if (this.audioReady && this.musicEngine && this.soundFontEngine) {
+      const audioCtx = this.soundFontEngine.getAudioContext();
+      this.musicEngine.update(audioCtx.currentTime);
+    }
 
     // Debug info
     if (this.debugFields) {
