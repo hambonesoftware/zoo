@@ -1,100 +1,112 @@
 // src/animals/CatDefinition.js
 
-import * as THREE from 'three';
-
-/**
- * CatDefinition:
- * - Updated for Feline proportions:
- * - Legs are longer and positioned under the body (narrower stance).
- * - Spine is arched and shorter.
- * - Tail is longer.
- * - Head is higher.
- */
-
 export const CatDefinition = {
   bones: [
-    // === Main Body Chain ===
-    // Lift spine_base (hips) off the floor (Y=0.35) so the cat stands
-    { name: 'spine_base',  parent: 'root',       position: [0, 0.35, 0] }, 
-    // Spine mid (ribcage) - slightly arched up
-    { name: 'spine_mid',   parent: 'spine_base', position: [0, 0.05, 0.45] },
-    // Spine neck (shoulder/neck base) - angled up
-    { name: 'spine_neck',  parent: 'spine_mid',  position: [0, 0.15, 0.35] },
-    // Head - positioned forward and up from neck
-    { name: 'head',        parent: 'spine_neck', position: [0, 0.10, 0.20] },
+    // === Main Body Column (The Barrel) ===
+    // spine_base = Hips. High up.
+    { name: 'spine_base',  parent: 'root',       position: [0, 2.1, 0] }, 
+    // spine_mid = Ribcage. Lower and forward.
+    { name: 'spine_mid',   parent: 'spine_base', position: [0, -0.1, 1.1] },
+    // spine_neck = Shoulder hump.
+    { name: 'spine_neck',  parent: 'spine_mid',  position: [0, 0.3, 0.9] },
+    // Head
+    { name: 'head',        parent: 'spine_neck', position: [0, -0.1, 0.7] },
+
+    // === Trunk (Chain) ===
+    { name: 'trunk_base',  parent: 'head',        position: [0, -0.3, 0.6] },
+    { name: 'trunk_mid1',  parent: 'trunk_base',  position: [0, -0.5, 0.1] },
+    { name: 'trunk_mid2',  parent: 'trunk_mid1',  position: [0, -0.5, 0.0] },
+    { name: 'trunk_tip',   parent: 'trunk_mid2',  position: [0, -0.4, 0.0] },
+
+    // === Tusks (Start -> Tip) ===
+    { name: 'tusk_left',   parent: 'head',        position: [ 0.3, -0.3, 0.4] },
+    { name: 'tusk_left_tip', parent: 'tusk_left', position: [ 0.1, 0.3, 0.5] }, // Curve up
+
+    { name: 'tusk_right',  parent: 'head',        position: [-0.3, -0.3, 0.4] },
+    { name: 'tusk_right_tip', parent: 'tusk_right', position: [-0.1, 0.3, 0.5] },
+
+    // === Ears (Start -> Tip) ===
+    { name: 'ear_left',    parent: 'head',        position: [ 0.4, 0.1, -0.2] },
+    { name: 'ear_left_tip', parent: 'ear_left',   position: [ 0.6, -0.6, -0.1] }, // Flop down
+
+    { name: 'ear_right',   parent: 'head',        position: [-0.4, 0.1, -0.2] },
+    { name: 'ear_right_tip', parent: 'ear_right', position: [-0.6, -0.6, -0.1] },
 
     // === Tail ===
-    // Cats have tails starting higher on the rump
-    { name: 'tail_base',   parent: 'spine_base', position: [0, 0.10, -0.15] },
-    { name: 'tail_mid',    parent: 'tail_base',  position: [0, 0.05, -0.35] }, // Longer segment
-    { name: 'tail_tip',    parent: 'tail_mid',   position: [0, 0.02, -0.35] }, // Longer segment
+    { name: 'tail_base',   parent: 'spine_base', position: [0, 0.3, -0.3] },
+    { name: 'tail_mid',    parent: 'tail_base',  position: [0, -0.6, -0.2] }, 
+    { name: 'tail_tip',    parent: 'tail_mid',   position: [0, -0.6, 0.0] },
 
-    // === Collarbones (Shoulders) ===
-    // Narrower X offsets compared to lizard (legs under body)
-    { name: 'front_left_collarbone',  parent: 'spine_mid', position: [ 0.09, -0.05, 0.10] },
-    { name: 'front_right_collarbone', parent: 'spine_mid', position: [-0.09, -0.05, 0.10] },
+    // === Shoulders/Collarbones ===
+    // Moved X from 0.5 -> 0.4 to bury them inside the body
+    { name: 'front_left_collarbone',  parent: 'spine_mid', position: [ 0.4, -0.3, 0.3] },
+    { name: 'front_right_collarbone', parent: 'spine_mid', position: [-0.4, -0.3, 0.3] },
 
     // === Hips/Pelvis ===
-    // Narrower X offsets
-    { name: 'back_left_pelvis',  parent: 'spine_base', position: [ 0.09, -0.02, 0.05] },
-    { name: 'back_right_pelvis', parent: 'spine_base', position: [-0.09, -0.02, 0.05] },
+    // Moved X from 0.5 -> 0.45
+    { name: 'back_left_pelvis',  parent: 'spine_base', position: [ 0.45, -0.2, 0.1] },
+    { name: 'back_right_pelvis', parent: 'spine_base', position: [-0.45, -0.2, 0.1] },
 
-    // === Front Left Leg ===
-    // Longer upper/lower legs to reach ground from new height
-    { name: 'front_left_upper_leg',  parent: 'front_left_collarbone', position: [0, -0.18, 0] },
-    { name: 'front_left_lower_leg',  parent: 'front_left_upper_leg',  position: [0, -0.16, 0.02] },
-    { name: 'front_left_paw',        parent: 'front_left_lower_leg',  position: [0, -0.12, 0.03] },
+    // === Front Legs (Thick Columns) ===
+    { name: 'front_left_upper',  parent: 'front_left_collarbone', position: [0, -0.8, 0] },
+    { name: 'front_left_lower',  parent: 'front_left_upper',      position: [0, -0.8, 0.05] },
+    { name: 'front_left_foot',   parent: 'front_left_lower',      position: [0, -0.4, 0.05] },
 
-    // === Front Right Leg ===
-    { name: 'front_right_upper_leg',  parent: 'front_right_collarbone', position: [0, -0.18, 0] },
-    { name: 'front_right_lower_leg',  parent: 'front_right_upper_leg',  position: [0, -0.16, 0.02] },
-    { name: 'front_right_paw',        parent: 'front_right_lower_leg',  position: [0, -0.12, 0.03] },
+    { name: 'front_right_upper', parent: 'front_right_collarbone', position: [0, -0.8, 0] },
+    { name: 'front_right_lower', parent: 'front_right_upper',      position: [0, -0.8, 0.05] },
+    { name: 'front_right_foot',  parent: 'front_right_lower',      position: [0, -0.4, 0.05] },
 
-    // === Back Left Leg ===
-    // Back legs often have a sharp angle at the hock (upper leg angles back, lower angles forward)
-    { name: 'back_left_upper_leg',  parent: 'back_left_pelvis',  position: [0, -0.20, -0.05] },
-    { name: 'back_left_lower_leg',  parent: 'back_left_upper_leg', position: [0, -0.22, 0.05] },
-    { name: 'back_left_paw',        parent: 'back_left_lower_leg', position: [0, -0.10, 0.03] },
+    // === Back Legs (Thick Columns) ===
+    { name: 'back_left_upper',   parent: 'back_left_pelvis',  position: [0, -0.8, 0.05] },
+    { name: 'back_left_lower',   parent: 'back_left_upper',   position: [0, -0.8, -0.1] },
+    { name: 'back_left_foot',    parent: 'back_left_lower',   position: [0, -0.4, 0.1] },
 
-    // === Back Right Leg ===
-    { name: 'back_right_upper_leg',  parent: 'back_right_pelvis',  position: [0, -0.20, -0.05] },
-    { name: 'back_right_lower_leg',  parent: 'back_right_upper_leg', position: [0, -0.22, 0.05] },
-    { name: 'back_right_paw',        parent: 'back_right_lower_leg', position: [0, -0.10, 0.03] }
+    { name: 'back_right_upper',  parent: 'back_right_pelvis',  position: [0, -0.8, 0.05] },
+    { name: 'back_right_lower',  parent: 'back_right_upper',   position: [0, -0.8, -0.1] },
+    { name: 'back_right_foot',   parent: 'back_right_lower',   position: [0, -0.4, 0.1] }
   ],
 
   sizes: {
-    // Main body - Deep chest, thinner waist
-    spine_base:   [0.25, 0.25, 0.30], // Hips
-    spine_mid:    [0.26, 0.32, 0.35], // Ribcage (Deep vertical)
-    spine_neck:   [0.18, 0.20, 0.20], // Neck base
-    head:         [0.22, 0.20, 0.22], // Rounder head
+    // === MASSIVE BODY RADII ===
+    // We increase these to simulate the width of hips/shoulders
+    spine_base:   [1.1, 1.1, 1.2], // Huge rump
+    spine_mid:    [1.25, 1.35, 1.3], // Huge barrel chest
+    spine_neck:   [1.0, 1.1, 1.0], // Thick neck base
+    head:         [0.85, 0.95, 0.9], // Large skull
 
-    // Tail - thicker at base
-    tail_base:    [0.10, 0.10, 0.25],
-    tail_mid:     [0.08, 0.08, 0.25],
-    tail_tip:     [0.06, 0.06, 0.15],
+    trunk_base:   [0.30, 0.30, 0.30],
+    trunk_mid1:   [0.25, 0.25, 0.25],
+    trunk_mid2:   [0.18, 0.18, 0.18],
+    trunk_tip:    [0.12, 0.12, 0.12],
 
-    // Shoulders/Hips
-    front_left_collarbone: [0.10, 0.10, 0.10],
-    front_right_collarbone: [0.10, 0.10, 0.10],
-    back_left_pelvis:      [0.11, 0.11, 0.11],
-    back_right_pelvis:     [0.11, 0.11, 0.11],
+    tusk_left:      [0.10, 0.10, 0.4],
+    tusk_left_tip:  [0.02, 0.02, 0.4],
+    tusk_right:     [0.10, 0.10, 0.4],
+    tusk_right_tip: [0.02, 0.02, 0.4],
 
-    // Limbs - More muscular upper, thinner lower
-    front_left_upper_leg:  [0.09, 0.14, 0.09],
-    front_left_lower_leg:  [0.07, 0.12, 0.07],
-    front_left_paw:        [0.08, 0.04, 0.09],
+    ear_left:      [0.7, 0.7, 0.1],
+    ear_left_tip:  [0.6, 0.6, 0.1],
+    ear_right:     [0.7, 0.7, 0.1],
+    ear_right_tip: [0.6, 0.6, 0.1],
 
-    front_right_upper_leg: [0.09, 0.14, 0.09],
-    front_right_lower_leg: [0.07, 0.12, 0.07],
-    front_right_paw:       [0.08, 0.04, 0.09],
+    tail_base:    [0.15, 0.15, 0.30],
+    tail_mid:     [0.08, 0.08, 0.30],
+    tail_tip:     [0.06, 0.06, 0.20],
 
-    back_left_upper_leg:   [0.12, 0.16, 0.12], // Thighs are thicker
-    back_left_lower_leg:   [0.07, 0.13, 0.07],
-    back_left_paw:         [0.08, 0.04, 0.09],
+    // Thicker Legs
+    front_left_upper:  [0.45, 0.45, 0.45],
+    front_left_lower:  [0.35, 0.35, 0.35],
+    front_left_foot:   [0.38, 0.25, 0.38],
 
-    back_right_upper_leg:  [0.12, 0.16, 0.12],
-    back_right_lower_leg:  [0.07, 0.13, 0.07],
-    back_right_paw:        [0.08, 0.04, 0.09]
+    back_left_upper:   [0.50, 0.50, 0.50],
+    back_left_lower:   [0.38, 0.38, 0.38],
+    back_left_foot:    [0.38, 0.25, 0.38],
+
+    front_right_upper: [0.45, 0.45, 0.45],
+    front_right_lower: [0.35, 0.35, 0.35],
+    front_right_foot:  [0.38, 0.25, 0.38],
+    back_right_upper:  [0.50, 0.50, 0.50],
+    back_right_lower:  [0.38, 0.38, 0.38],
+    back_right_foot:   [0.38, 0.25, 0.38],
   }
 };
