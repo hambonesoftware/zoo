@@ -19,9 +19,8 @@ export function createCatSkinMaterial(options = {}) {
   const accentColorHex = options.accentColor !== undefined ? options.accentColor : 0x7a4d30;
   const bellyColorHex = options.bellyColor !== undefined ? options.bellyColor : 0xf0d9b5;
 
-  const material = new MeshStandardNodeMaterial({
-    skinning: true
-  });
+  const material = new MeshStandardNodeMaterial();
+  material.skinning = true;
 
   const baseCol = color(baseColorHex);
   const accentCol = color(accentColorHex);
