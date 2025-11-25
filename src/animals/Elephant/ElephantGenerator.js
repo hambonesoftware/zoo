@@ -64,8 +64,8 @@ export class ElephantGenerator {
       bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
       // Increase sides for smoother curvature on the trunk
       sides: 24,
-      baseRadius: 0.35,
-      tipRadius: 0.1
+      baseRadius: 0.45,
+      tipRadius: 0.15
     });
 
     // === 4. TUSKS (Start -> Tip) ===
