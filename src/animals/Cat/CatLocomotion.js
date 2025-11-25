@@ -14,12 +14,12 @@ import * as THREE from 'three';
  * Expected bone keys (any missing ones are safely ignored):
  * - 'spine_base' (root / hips)
  * - 'spine_mid', 'spine_neck', 'head'
- * - 'front_left_upper_leg', 'front_left_lower_leg'
- * - 'front_right_upper_leg', 'front_right_lower_leg'
- * - 'back_left_upper_leg',  'back_left_lower_leg'
- * - 'back_right_upper_leg', 'back_right_lower_leg'
- * - 'trunk_base', 'trunk_mid', 'trunk_tip'
- * - 'ear_left', 'ear_right'
+ * - Front legs: 'front_left_shoulder', 'front_left_upper', 'front_left_lower', 'front_left_paw'
+ * - Front legs (legacy): 'front_left_upper_leg', 'front_left_lower_leg'
+ * - Rear legs: 'rear_left_hip', 'rear_left_upper', 'rear_left_lower', 'rear_left_paw'
+ * - Rear legs (legacy): 'back_left_upper_leg',  'back_left_lower_leg'
+ * - Tail: 'tail_base', 'tail_mid', 'tail_tip'
+ * - Ears: 'ear_left', 'ear_right'
  */
 export class CatLocomotion {
   constructor(cat) {
@@ -60,6 +60,13 @@ export class CatLocomotion {
       ears: { angle: 0, velocity: 0 },
       tail: { angle: 0, velocity: 0 }
     };
+  }
+
+  _getBone(bones, ...candidates) {
+    for (const name of candidates) {
+      if (bones[name]) return bones[name];
+    }
+    return null;
   }
 
   /**
@@ -423,8 +430,8 @@ export class CatLocomotion {
     const swingRight = Math.sin(phaseRight);
 
     // BACK LEFT (phaseLeft)
-    const blUpper = bones['back_left_upper_leg'];
-    const blLower = bones['back_left_lower_leg'];
+    const blUpper = this._getBone(bones, 'rear_left_upper', 'back_left_upper_leg', 'back_left_upper');
+    const blLower = this._getBone(bones, 'rear_left_lower', 'back_left_lower_leg', 'back_left_lower');
     if (blUpper && blLower) {
       // Upper swings forward/back
       blUpper.rotation.x = swingAmpBack * swingLeft;
@@ -433,8 +440,8 @@ export class CatLocomotion {
     }
 
     // FRONT LEFT (phaseLeft, but with smaller amplitude and phase lag)
-    const flUpper = bones['front_left_upper_leg'];
-    const flLower = bones['front_left_lower_leg'];
+    const flUpper = this._getBone(bones, 'front_left_upper', 'front_left_upper_leg');
+    const flLower = this._getBone(bones, 'front_left_lower', 'front_left_lower_leg');
     const swingLeftFront = Math.sin(phaseLeft + 0.3); // a bit offset from hind
     if (flUpper && flLower) {
       flUpper.rotation.x = swingAmpFront * swingLeftFront;
@@ -442,16 +449,16 @@ export class CatLocomotion {
     }
 
     // BACK RIGHT (phaseRight)
-    const brUpper = bones['back_right_upper_leg'];
-    const brLower = bones['back_right_lower_leg'];
+    const brUpper = this._getBone(bones, 'rear_right_upper', 'back_right_upper_leg', 'back_right_upper');
+    const brLower = this._getBone(bones, 'rear_right_lower', 'back_right_lower_leg', 'back_right_lower');
     if (brUpper && brLower) {
       brUpper.rotation.x = swingAmpBack * swingRight;
       brLower.rotation.x = kneeBendBack * Math.max(0, -swingRight);
     }
 
     // FRONT RIGHT (phaseRight with small offset)
-    const frUpper = bones['front_right_upper_leg'];
-    const frLower = bones['front_right_lower_leg'];
+    const frUpper = this._getBone(bones, 'front_right_upper', 'front_right_upper_leg');
+    const frLower = this._getBone(bones, 'front_right_lower', 'front_right_lower_leg');
     const swingRightFront = Math.sin(phaseRight + 0.3);
     if (frUpper && frLower) {
       frUpper.rotation.x = swingAmpFront * swingRightFront;
