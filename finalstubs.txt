@@ -1,0 +1,336 @@
+```javascript
+// src/app.js
+import { setupWorld } from './world.js';
+import { PenManager } from './pens/PenManager.js';
+import { AnimationSystem } from './systems/AnimationSystem.js';
+
+function main() {
+  const { world, scene, camera, renderer } = setupWorld();
+  const animationSystem = new AnimationSystem();
+  const penManager = new PenManager(world, scene, animationSystem);
+
+  penManager.createPen('quadruped');
+  penManager.createPen('biped');
+  penManager.createPen('multiarmed');
+  penManager.createPen('nolegged');
+  penManager.createPen('tentacled');
+
+  function animate() {
+    requestAnimationFrame(animate);
+    world.step(1/60);
+    penManager.update(1/60);
+    animationSystem.update(1/60);
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+main();
+
+// src/world.js
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+// import { DebugRenderer } from 'three-cannon-debugger';
+
+export function setupWorld() {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+  world.solver.iterations = 15;
+  world.broadphase = new CANNON.SAPBroadphase(world);
+  world.allowSleep = true;
+
+  // Optional: Debug Renderer for physics
+  // const debugRenderer = new DebugRenderer(scene, world);
+
+  // Setup ground, lighting, etc
+  return { world, scene, camera, renderer /*, debugRenderer*/ };
+}
+
+// src/pens/PenManager.js
+import { QuadrupedPen } from './quadrupedPen.js';
+import { BipedPen } from './bipedPen.js';
+import { MultiarmedPen } from './multiarmedPen.js';
+import { NoleggedPen } from './noleggedPen.js';
+import { TentacledPen } from './tentacledPen.js';
+
+export class PenManager {
+  constructor(world, scene, animationSystem) {
+    this.world = world;
+    this.scene = scene;
+    this.animationSystem = animationSystem;
+    this.pens = new Map();
+    this.penTypes = {
+      quadruped: { class: QuadrupedPen, offset: { x:0, y:0, z:0 } },
+      biped: { class: BipedPen, offset: { x:10, y:0, z:0 } },
+      multiarmed: { class: MultiarmedPen, offset: { x:0, y:0, z:10 } },
+      nolegged: { class: NoleggedPen, offset: { x:-10, y:0, z:0 } },
+      tentacled: { class: TentacledPen, offset: { x:0, y:0, z:-10 } }
+    };
+    this.penCount = 0;
+  }
+
+  createPen(type, positionOverride) {
+    const config = this.penTypes[type];
+    const pen = new config.class(
+      this.world,
+      this.scene,
+      this.animationSystem,
+      positionOverride || config.offset
+    );
+    pen.id = `${type}_${this.penCount++}`;
+    this.pens.set(pen.id, pen);
+    return pen;
+  }
+
+  update(dt) {
+    this.pens.forEach(pen => pen.update(dt));
+  }
+}
+
+// src/pens/quadrupedPen.js
+import { Lion } from '../creatures/lion.js';
+import { Ball, Box, Food, Log } from '../objects/index.js';
+
+export class QuadrupedPen {
+  constructor(world, scene, animationSystem, offset) {
+    this.objects = [];
+    this.lion = new Lion(world, scene, offset, animationSystem);
+    this.objects.push(this.lion,
+      new Ball(world, scene, { ...offset, x: offset.x + 3 }, 0.5),
+      new Box(world, scene, { ...offset, x: offset.x - 3 }, { x:1, y:1, z:1 }),
+      new Food(world, scene, { ...offset, z: offset.z + 3 }),
+      new Log(world, scene, { ...offset, x: offset.x + 2, z: offset.z - 2 }, 2)
+    );
+  }
+  update(dt) {
+    this.objects.forEach(obj => obj.update?.(dt));
+  }
+}
+
+// (Repeat similar pattern for BipedPen, MultiarmedPen, NoleggedPen, TentacledPen)
+
+// src/creatures/BaseCreature.js
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { createCapsule } from '../utils/physics/rigHelpers.js';
+
+export class BaseCreature {
+  constructor(world, scene, position) {
+    this.world = world;
+    this.scene = scene;
+    this.position = position;
+    this.bodies = [];
+    this.constraints = [];
+    this.mesh = new THREE.Group();
+    this.behaviors = {};
+  }
+
+  addToWorld() {
+    this.bodies.forEach(body => this.world.addBody(body));
+    this.constraints.forEach(constraint => this.world.addConstraint(constraint));
+	console.log("[DEBUG] About to add to scene:", this.mesh, this.mesh instanceof THREE.Object3D, this.mesh?.type);
+
+    this.scene.add(this.mesh);
+  }
+
+  update() {
+    this.bodies.forEach((body, i) => {
+      if (this.mesh.children[i]) {
+        this.mesh.children[i].position.copy(body.position);
+        this.mesh.children[i].quaternion.copy(body.quaternion);
+      }
+    });
+  }
+
+  createCapsulePart(options) {
+    const { radius, length, pos, quat, mass } = options;
+    const body = new CANNON.Body({ mass });
+    body.addShape(createCapsule(radius, length));
+    body.position.set(pos.x, pos.y, pos.z);
+    if(quat) body.quaternion.set(quat.x, quat.y, quat.z, quat.w);
+    return body;
+  }
+}
+
+// src/creatures/lion.js
+import { BaseCreature } from './BaseCreature.js';
+import { StateMachine } from '../utils/stateMachine.js';
+import { addConeTwist, addHinge } from '../utils/physics/rigHelpers.js';
+import MaterialManager from '../materials/MaterialManager.js';
+import MeshBuilder from '../utils/graphics/MeshBuilder.js';
+
+export class Lion extends BaseCreature {
+  constructor(world, scene, position, animationSystem) {
+    super(world, scene, position);
+    this.states = new StateMachine({
+      idle: { enter: this.onIdleEnter, update: this.updateIdle },
+      walking: { enter: this.onWalkEnter, update: this.updateWalk },
+      running: { enter: this.onRunEnter, update: this.updateRun }
+    }, 'idle');
+    this.animationSystem = animationSystem;
+    this.setupSkeleton();
+    this.setupMesh();
+    this.addToWorld();
+  }
+
+  setupSkeleton() {
+    // ... create CANNON bodies, constraints as in prior stub ...
+  }
+  setupMesh() {
+    // ... use MeshBuilder to create meshes, assign MaterialManager.get('lionFur') ...
+    // ... assign animations to animationSystem if needed ...
+  }
+  update(dt) {
+    super.update();
+    this.states.update(dt);
+  }
+  // onIdleEnter, updateIdle, onWalkEnter, updateWalk, etc.
+}
+
+// src/creatures/behaviors/LionBehavior.js
+export class LionBehavior {
+  // Optional for further separation of behavior logic
+}
+
+// src/utils/stateMachine.js
+export class StateMachine {
+  constructor(states, initial) {
+    this.states = states;
+    this.current = initial;
+    this.stateTime = 0;
+    if(this.states[initial]?.enter) this.states[initial].enter();
+  }
+  update(dt) {
+    this.stateTime += dt;
+    this.states[this.current]?.update?.(dt, this.stateTime);
+  }
+  setState(state) {
+    if(this.states[state]) {
+      this.states[this.current]?.exit?.();
+      this.current = state;
+      this.stateTime = 0;
+      this.states[state]?.enter?.();
+    }
+  }
+}
+
+// src/materials/MaterialManager.js
+import * as THREE from 'three';
+
+const materials = {
+  lionFur: new THREE.MeshStandardMaterial({ color: 0xc19a6b, roughness: 0.7, metalness: 0.1 }),
+  skin: new THREE.MeshStandardMaterial({ color: 0xffe0bd, roughness: 0.8 }),
+  spiderCarapace: new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.6 }),
+  spiderLeg: new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7 }),
+  snakeScales: new THREE.MeshStandardMaterial({ color: 0x228b22, roughness: 0.8 }),
+  octopusSkin: new THREE.MeshStandardMaterial({ color: 0x9933cc, roughness: 0.7 }),
+  log: new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.6 }),
+  wood: new THREE.MeshStandardMaterial({ color: 0xc2b280, roughness: 0.8 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 1, roughness: 0.3 }),
+  rubber: new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 }),
+  food: new THREE.MeshStandardMaterial({ color: 0xffe066, roughness: 0.7 })
+};
+export default {
+  get(name) {
+    if (!materials[name]) console.warn(`Missing material: ${name}`);
+    return materials[name]?.clone() || new THREE.MeshStandardMaterial();
+  }
+};
+
+// src/utils/graphics/MeshBuilder.js
+import * as THREE from 'three';
+export default {
+  createSphere(radius, material, segments = 32) {
+    const geo = new THREE.SphereGeometry(radius, segments, segments);
+    return new THREE.Mesh(geo, material);
+  },
+  createCapsule(radius, height, material, capSegments = 8) {
+    // ... optimized capsule mesh creation logic ...
+    const geo = new THREE.CapsuleGeometry(radius, height, capSegments, capSegments);
+    return new THREE.Mesh(geo, material);
+  }
+};
+
+// src/objects/index.js
+export { Ball } from './ball.js';
+export { Box } from './box.js';
+export { Food } from './food.js';
+export { Log } from './log.js';
+
+// src/objects/ball.js
+import MaterialManager from '../materials/MaterialManager.js';
+import MeshBuilder from '../utils/graphics/MeshBuilder.js';
+import * as CANNON from 'cannon-es';
+export class Ball {
+  constructor(world, scene, position, radius) {
+    this.body = new CANNON.Body({
+      mass: 1,
+      shape: new CANNON.Sphere(radius),
+      position: new CANNON.Vec3(position.x, position.y, position.z)
+    });
+    world.addBody(this.body);
+    this.mesh = MeshBuilder.createSphere(radius, MaterialManager.get('rubber'));
+	console.log("[DEBUG] About to add to scene:", this.mesh, this.mesh instanceof THREE.Object3D, this.mesh?.type);
+    scene.add(this.mesh);
+  }
+  update() {
+    this.mesh.position.copy(this.body.position);
+    this.mesh.quaternion.copy(this.body.quaternion);
+  }
+}
+// (repeat for box.js, food.js, log.js, etc. using proper mesh/material)
+
+// src/utils/physics/rigHelpers.js
+import * as CANNON from 'cannon-es';
+export function createCapsule(radius, length, direction = 'y') {
+  // Create a capsule aligned to the specified axis
+  // ... implementation as before ...
+}
+export function addConeTwist(bodyA, bodyB, options) {
+  return new CANNON.ConeTwistConstraint(bodyA, bodyB, options);
+}
+export function addHinge(bodyA, bodyB, options) {
+  return new CANNON.HingeConstraint(bodyA, bodyB, options);
+}
+
+// src/systems/AnimationSystem.js
+import * as THREE from 'three';
+export class AnimationSystem {
+  constructor() { this.mixers = []; }
+  add(mesh, animations) {
+    const mixer = new THREE.AnimationMixer(mesh);
+    animations.forEach(anim => mixer.clipAction(anim).play());
+    this.mixers.push(mixer);
+  }
+  update(dt) { this.mixers.forEach(mixer => mixer.update(dt)); }
+}
+
+// src/styles/style.css
+body { margin:0; overflow:hidden; background: #111; }
+
+// index.html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>3D Zoo</title>
+  <link rel="stylesheet" href="src/styles/style.css">
+</head>
+<body>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
+
+// package.json
+{
+  "name": "3d-zoo",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "three": "^0.150.1",
+    "cannon-es": "^0.20.0"
+  }
+}
+```
