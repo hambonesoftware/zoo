@@ -3,10 +3,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from '../../libs/BufferGeometryUtils.js';
 
-function buildLimbSegment(start, end, radiusStart, radiusEnd, segments = 8, rings = 5) {
+function buildLimbSegment(start, end, radiusStart, radiusEnd, segments = 8, rings = 5, boneStart = 0, boneEnd = 0, uvOffset = 0, uvSpan = 1) {
   const geometry = new THREE.BufferGeometry();
   const vertices = [];
   const indices = [];
+  const uvs = [];
+  const skinIndices = [];
+  const skinWeights = [];
 
   const direction = new THREE.Vector3().subVectors(end, start);
   const length = direction.length();
@@ -36,6 +39,12 @@ function buildLimbSegment(start, end, radiusStart, radiusEnd, segments = 8, ring
 
       const v = center.clone().add(offset);
       vertices.push(v.x, v.y, v.z);
+      uvs.push(j / segments, uvOffset + t * uvSpan);
+
+      const weightEnd = t;
+      const weightStart = 1 - weightEnd;
+      skinIndices.push(boneStart, boneEnd, 0, 0);
+      skinWeights.push(weightStart, weightEnd, 0, 0);
     }
   }
 
@@ -51,6 +60,9 @@ function buildLimbSegment(start, end, radiusStart, radiusEnd, segments = 8, ring
   }
 
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
+  geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
@@ -66,6 +78,12 @@ export function generateLimbGeometry(skeleton, options = {}) {
   const segments = options.sides || 8;
   const rings = options.rings || 5;
 
+  const boneIndexMap = {};
+  skeleton.bones.forEach((bone, idx) => {
+    boneIndexMap[bone.name] = idx;
+    bone.updateMatrixWorld(true);
+  });
+
   const positions = bones.map((name) => {
     const bone = skeleton.bones.find((b) => b.name === name);
     return bone
@@ -74,12 +92,28 @@ export function generateLimbGeometry(skeleton, options = {}) {
   });
 
   const limbSegments = [];
+  const segmentSpan = 1 / Math.max(1, positions.length - 1);
   for (let i = 0; i < positions.length - 1; i++) {
     const start = positions[i];
     const end = positions[i + 1];
     const rStart = radii[i] ?? radii[radii.length - 1] ?? 0.3;
     const rEnd = radii[i + 1] ?? rStart;
-    limbSegments.push(buildLimbSegment(start, end, rStart, rEnd, segments, rings));
+    const boneStart = boneIndexMap[bones[i]] ?? 0;
+    const boneEnd = boneIndexMap[bones[i + 1]] ?? boneStart;
+    limbSegments.push(
+      buildLimbSegment(
+        start,
+        end,
+        rStart,
+        rEnd,
+        segments,
+        rings,
+        boneStart,
+        boneEnd,
+        i * segmentSpan,
+        segmentSpan
+      )
+    );
   }
 
   return mergeGeometries(limbSegments, false);

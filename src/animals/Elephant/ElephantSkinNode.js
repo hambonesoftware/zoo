@@ -21,10 +21,8 @@ export function createElephantSkinMaterial(options = {}) {
   const baseColorHex =
     options.bodyColor !== undefined ? options.bodyColor : 0x999b9f;
 
-  // Enable skinning so the material works with SkinnedMesh + Skeleton.
-  const material = new MeshStandardNodeMaterial({
-    skinning: true
-  });
+  const material = new MeshStandardNodeMaterial();
+  material.skinning = true; // Enable skinning for the SkinnedMesh
 
   // ------------------------------------------------------------
   // 1) Low-frequency macro shading based on local position
