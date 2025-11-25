@@ -139,6 +139,48 @@ export class ElephantGenerator {
     });
 
     // === Merge ===
+    // BufferGeometryUtils requires that all geometries share the same
+    // attributes and index state. The procedural body parts above were
+    // authored independently, so we normalise them here by ensuring each
+    // has position/normal/uv/skinIndex/skinWeight attributes and by
+    // converting everything to non-indexed form.
+    const prepareForMerge = (geometry) => {
+      let geo = geometry;
+
+      const count = geo.getAttribute('position').count;
+      const ensureAttribute = (name, factory) => {
+        if (!geo.getAttribute(name)) {
+          geo.setAttribute(name, factory(count));
+        }
+      };
+
+      ensureAttribute('normal', () => {
+        geo.computeVertexNormals();
+        return geo.getAttribute('normal');
+      });
+
+      ensureAttribute('uv', (vertexCount) =>
+        new THREE.Float32BufferAttribute(new Float32Array(vertexCount * 2), 2)
+      );
+
+      ensureAttribute('skinIndex', (vertexCount) =>
+        new THREE.Uint16BufferAttribute(new Uint16Array(vertexCount * 4), 4)
+      );
+
+      ensureAttribute('skinWeight', (vertexCount) => {
+        const weights = new Float32Array(vertexCount * 4);
+        for (let i = 0; i < vertexCount; i++) {
+          weights[i * 4] = 1; // full weight to the first influence
+        }
+        return new THREE.Float32BufferAttribute(weights, 4);
+      });
+
+      geo = geo.index ? geo.toNonIndexed() : geo;
+      geo.morphAttributes = geo.morphAttributes || {};
+
+      return geo;
+    };
+
     const mergedGeometry = mergeGeometries(
       [
         torsoGeometry,
@@ -153,7 +195,7 @@ export class ElephantGenerator {
         fr,
         bl,
         br
-      ],
+      ].map(prepareForMerge),
       false
     );
 
