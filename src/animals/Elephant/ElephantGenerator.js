@@ -10,6 +10,7 @@ import { mergeGeometries } from '../../libs/BufferGeometryUtils.js';
 import { ElephantBehavior } from './ElephantBehavior.js';
 
 import { createElephantSkinMaterial } from './ElephantSkinNode.js';
+import { makeElephantTorsoRadiusProfile } from './ElephantTorsoProfile.js';
 
 export class ElephantGenerator {
   static generate(skeleton, options = {}) {
@@ -38,6 +39,7 @@ export class ElephantGenerator {
     const legScale    = 1.0 + (variantFactor - 0.5) * 0.2;   // ±10%
     const tuskScale   = 1.0 + (variantFactor - 0.5) * 0.3;   // ±15%
     const headScale   = 1.0 + (0.5 - variantFactor) * 0.15;  // ±7.5%
+    const torsoRadiusProfile = makeElephantTorsoRadiusProfile(headScale);
 
     // === 1. TORSO (The Tank) ===
     // Radii indices map to: [Hips, Ribcage, NeckBase, HeadBase]
@@ -46,7 +48,8 @@ export class ElephantGenerator {
       // Slightly smooth the transitions between hips, ribcage and neck
       radii: [1.15 * headScale, 1.35, 1.15, 0.9 * headScale],
       // Increase the number of sides moderately for a rounder barrel
-      sides: 28
+      sides: 28,
+      radiusProfile: torsoRadiusProfile
     });
 
     // === 2. HEAD ===
@@ -199,7 +202,7 @@ export class ElephantGenerator {
       false
     );
 
-        // === Material (Node-based elephant skin) ===
+    // === Material (Node-based elephant skin) ===
     const material = createElephantSkinMaterial({
       bodyColor: options.bodyColor
     });
