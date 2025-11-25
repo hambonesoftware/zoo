@@ -251,10 +251,10 @@ export class ElephantLocomotion {
       const trunkMid1 = bones['trunk_mid1'] || bones['trunk_mid'];
       const trunkMid2 = bones['trunk_mid2'];
       const trunkTip = bones['trunk_tip'];
-      if (trunkBase) trunkBase.rotation.y += s.angle * 0.7;
-      if (trunkMid1) trunkMid1.rotation.y += s.angle * 0.5;
-      if (trunkMid2) trunkMid2.rotation.y += s.angle * 0.35;
-      if (trunkTip) trunkTip.rotation.y += s.angle * 0.2;
+      if (trunkBase) trunkBase.rotation.y += s.angle * 0.55;
+      if (trunkMid1) trunkMid1.rotation.y += s.angle * 0.4;
+      if (trunkMid2) trunkMid2.rotation.y += s.angle * 0.3;
+      if (trunkTip) trunkTip.rotation.y += s.angle * 0.18;
     }
     // --- Ears spring ---
     {

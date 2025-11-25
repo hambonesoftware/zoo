@@ -74,10 +74,10 @@ export const ElephantDefinition = {
     spine_neck:   [1.0, 1.1, 1.0], // Thick neck base
     head:         [0.85, 0.95, 0.9], // Large skull
 
-    trunk_base:   [0.30, 0.30, 0.30],
-    trunk_mid1:   [0.25, 0.25, 0.25],
-    trunk_mid2:   [0.18, 0.18, 0.18],
-    trunk_tip:    [0.12, 0.12, 0.12],
+    trunk_base:   [0.45, 0.45, 0.45],
+    trunk_mid1:   [0.36, 0.36, 0.36],
+    trunk_mid2:   [0.26, 0.26, 0.26],
+    trunk_tip:    [0.16, 0.16, 0.16],
 
     tusk_left:      [0.10, 0.10, 0.4],
     tusk_left_tip:  [0.02, 0.02, 0.4],
