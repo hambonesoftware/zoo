@@ -7,6 +7,7 @@ import { generateHeadGeometry } from '../bodyParts/HeadGenerator.js';
 import { generateLimbGeometry } from '../bodyParts/LimbGenerator.js';
 import { mergeGeometries } from '../../libs/BufferGeometryUtils.js';
 import { GorillaBehavior } from './GorillaBehavior.js';
+import { createGorillaSkinMaterial } from './GorillaSkinNode.js';
 
 export class GorillaGenerator {
   static generate(skeleton, options = {}) {
@@ -125,11 +126,10 @@ export class GorillaGenerator {
       false
     );
 
-    const material = new THREE.MeshStandardMaterial({
-      color: options.bodyColor || 0x3b3b3b,
-      roughness: 0.65,
-      metalness: 0.08,
-      skinning: true
+    const material = createGorillaSkinMaterial({
+      bodyColor: options.bodyColor,
+      chestColor: options.chestColor,
+      faceColor: options.faceColor
     });
 
     const mesh = new THREE.SkinnedMesh(mergedGeometry, material);
