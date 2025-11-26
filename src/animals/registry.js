@@ -57,6 +57,9 @@ export const animalsRegistry = {
     },
     createCreature(options = {}) {
       return new AnteaterCreature(options);
+    }
+  },
+
   giraffe: {
     id: 'giraffe',
     label: 'Giraffe',
