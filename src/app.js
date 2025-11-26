@@ -20,80 +20,19 @@ function isWebGPUSupported() {
   }
 }
 
-function showWebGPURequiredOverlay() {
-  if (typeof document === 'undefined') {
-    return;
-  }
-
-  const existing = document.getElementById('webgpu-required-overlay');
-  if (existing) return;
-
-  const overlay = document.createElement('div');
-  overlay.id = 'webgpu-required-overlay';
-  Object.assign(overlay.style, {
-    position: 'fixed',
-    inset: '0',
-    background: 'radial-gradient(circle at top, #020617, #020617 40%, #000000 100%)',
-    color: '#f9fafb',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    textAlign: 'center',
-    padding: '2rem',
-    zIndex: '9999',
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif'
-  });
-
-  const title = document.createElement('h1');
-  title.textContent = 'WebGPU Required';
-  title.style.fontSize = 'clamp(1.8rem, 2.8vw, 2.4rem)';
-  title.style.letterSpacing = '0.08em';
-  title.style.textTransform = 'uppercase';
-  title.style.marginBottom = '0.75rem';
-
-  const subtitle = document.createElement('p');
-  subtitle.textContent =
-    'Zoo Animal Studio now runs on WebGPU for higher-fidelity lighting and shading. ' +
-    'Your browser does not appear to support WebGPU.';
-  subtitle.style.maxWidth = '40rem';
-  subtitle.style.fontSize = '0.95rem';
-  subtitle.style.lineHeight = '1.6';
-  subtitle.style.opacity = '0.9';
-  subtitle.style.marginBottom = '1rem';
-
-  const hint = document.createElement('p');
-  hint.innerHTML = [
-    '<strong>To continue:</strong>',
-    'Use a recent desktop version of Chrome, Edge, or another WebGPU-capable browser,',
-    'and ensure that hardware acceleration & WebGPU are enabled in settings/flags.'
-  ].join(' ');
-  hint.style.maxWidth = '40rem';
-  hint.style.fontSize = '0.9rem';
-  hint.style.lineHeight = '1.5';
-  hint.style.opacity = '0.85';
-
-  overlay.appendChild(title);
-  overlay.appendChild(subtitle);
-  overlay.appendChild(hint);
-
-  document.body.appendChild(overlay);
-}
-
 class App {
   constructor() {
     this.webgpuSupported = isWebGPUSupported();
 
     if (!this.webgpuSupported) {
-      console.error('[Zoo] WebGPU is not available in this environment. Zoo requires WebGPU for rendering.');
-      showWebGPURequiredOverlay();
-      // Do not create the world or start the render loop.
-      return;
+      console.warn('[Zoo] WebGPU is not available; falling back to WebGL renderer.');
     }
 
     // Create the world (scene, camera, controls, renderer)
     const container = document.body;
-    const { scene, camera, controls, renderer } = createWorld(container);
+    const { scene, camera, controls, renderer } = createWorld(container, {
+      preferWebGPU: this.webgpuSupported
+    });
 
     this.scene = scene;
     this.camera = camera;
@@ -115,11 +54,13 @@ class App {
     const defaultAnimalType = 'cat';
 
     // Create the zoo with a default animal
-    this.zoo = new Zoo(this.scene, {
+    this.zooOptions = {
       penCount: 1,
       spacing: 10,
       animalType: defaultAnimalType
-    });
+    };
+
+    this.zoo = new Zoo(this.scene, this.zooOptions);
 
     // UI wiring
     this.setupAnimalDropdown(defaultAnimalType);
@@ -236,9 +177,13 @@ class App {
       try {
         await this.renderer.init();
       } catch (error) {
-        console.error('[Zoo] Failed to initialize renderer (likely WebGPU unsupported or blocked):', error);
-        showWebGPURequiredOverlay();
-        return;
+        console.warn('[Zoo] WebGPU renderer failed to initialize; rebuilding world with WebGL.', error);
+        const fallback = createWorld(document.body, { preferWebGPU: false });
+        this.scene = fallback.scene;
+        this.camera = fallback.camera;
+        this.controls = fallback.controls;
+        this.renderer = fallback.renderer;
+        this.zoo = new Zoo(this.scene, this.zooOptions);
       }
     }
     this.animate(0);
