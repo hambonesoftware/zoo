@@ -14,7 +14,7 @@ This framework provides a prescriptive, machine-friendly process for defining an
 ---
 
 ## Standard Animal Schema
-Use this schema verbatim for every new animal definition. Keep values concise and behavior-focused.
+Use this schema verbatim for every new animal definition. Keep values concise and behavior-focused. Everything required to author a new animal is documented below—no external references are needed beyond species facts.
 
 ```yaml
 name: <Common name>
@@ -46,6 +46,10 @@ behaviors:
 - **capabilities**: Declare only if they enable a behavior (e.g., `echolocation`, `burrowing`, `retractable_claws`).
 - **behaviors**: Each behavior must cite required inputs and realistic constraints; avoid magical actions.
 
+**Required fields**: `name`, `scientific_name`, `taxonomy` (all children), `size` (both dimensions), `habitat`, `diet`, at least one `capability`, and at least one `behavior` with `name`, `description`, `inputs`, `outputs`, `constraints`.
+
+**Optional but recommended**: Multiple habitats or diets if seasonal, capability notes (e.g., `venom_strength` qualifiers), and extended constraint details such as energy cost or time-of-day.
+
 ### Behavior Design Rules
 1. **Orthogonality**: One behavior = one action.
 2. **Parameterization**: Prefer inputs (e.g., `terrain_type`, `target_distance`) over separate behaviors.
@@ -63,6 +67,11 @@ behaviors:
 - `migrate` – long-distance movement; include seasonal triggers.
 - `play` – social or developmental play; include social context.
 - `thermoregulate` – actions that adjust body temperature (shade-seeking, ear-flapping, panting).
+
+### Behavior Input/Output Cheatsheet
+- **Inputs** should describe context the agent must supply (e.g., `terrain_type`, `prey_size`, `ambient_temperature`).
+- **Outputs** should describe state changes the simulation can track (e.g., `energy_gain`, `threat_alerted`, `hydration_loss`).
+- **Constraints** must express cadence or limits (frequency per day, environmental triggers, and resource trade-offs).
 
 ---
 
@@ -196,8 +205,8 @@ taxonomy:
   order: <Order>
   family: <Family>
 size:
-  length: <value>
-  weight: <value>
+  length: <value>  # include units
+  weight: <value>  # include units
 habitat: <List environments>
 diet: <Primary diet>
 capabilities:
@@ -205,7 +214,14 @@ capabilities:
 behaviors:
   - name: <behavior>
     description: <action>
-    inputs: <inputs needed>
-    outputs: <outcome>
-    constraints: <limits>
+    inputs: <inputs needed>  # context parameters; use lists or CSV strings
+    outputs: <outcome>       # state changes or emitted events
+    constraints: <limits>    # frequency, triggers, or resource costs
 ```
+
+### Completeness Checklist (use before finalizing)
+- [ ] All required fields are present and filled with concrete values and units where applicable.
+- [ ] Each behavior is linked to at least one declared capability.
+- [ ] Inputs, outputs, and constraints are specific and measurable (no empty or generic text).
+- [ ] Habitats and diet logically support the behaviors (e.g., no aquatic actions without aquatic habitat/capability).
+- [ ] YAML validates against the schema format above without extra keys.
