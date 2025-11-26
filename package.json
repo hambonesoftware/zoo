@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
-    "three": "^0.177.0"
+    "three": "^0.177.0",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "vite": "^5.0.0"
