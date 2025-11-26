@@ -8,12 +8,6 @@ import { CatCreature } from './Cat/CatCreature.js';
 import { CatPen } from './Cat/CatPen.js';
 import { ElephantCreature } from './Elephant/ElephantCreature.js';
 import { ElephantPen } from './Elephant/ElephantPen.js';
-import { GorillaCreature } from './Gorilla/GorillaCreature.js';
-import { GorillaPen } from './Gorilla/GorillaPen.js';
-import { AnteaterCreature } from './Anteater/AnteaterCreature.js';
-import { AnteaterPen } from './Anteater/AnteaterPen.js';
-import { GiraffeCreature } from './Giraffe/GiraffeCreature.js';
-import { GiraffePen } from './Giraffe/GiraffePen.js';
 
 export const animalsRegistry = {
   cat: {
@@ -35,39 +29,6 @@ export const animalsRegistry = {
     },
     createCreature(options = {}) {
       return new ElephantCreature(options);
-    }
-  },
-
-  gorilla: {
-    id: 'gorilla',
-    label: 'Gorilla',
-    createPen(scene, options = {}) {
-      return new GorillaPen(scene, options);
-    },
-    createCreature(options = {}) {
-      return new GorillaCreature(options);
-    }
-  },
-
-  anteater: {
-    id: 'anteater',
-    label: 'Giant Anteater',
-    createPen(scene, options = {}) {
-      return new AnteaterPen(scene, options);
-    },
-    createCreature(options = {}) {
-      return new AnteaterCreature(options);
-    }
-  },
-
-  giraffe: {
-    id: 'giraffe',
-    label: 'Giraffe',
-    createPen(scene, options = {}) {
-      return new GiraffePen(scene, options);
-    },
-    createCreature(options = {}) {
-      return new GiraffeCreature(options);
     }
   }
 };

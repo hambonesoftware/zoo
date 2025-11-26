@@ -14,9 +14,6 @@ export default defineConfig({
     open: true,            // open browser automatically
     port: 5173             // or your favorite port
   },
-  optimizeDeps: {
-    include: ["yaml"]
-  },
   build: {
     outDir: "dist",        // build output directory
     sourcemap: true
