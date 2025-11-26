@@ -1,0 +1,43 @@
+name: Giraffe
+scientific_name: Giraffa camelopardalis
+taxonomy:
+  class: Mammalia
+  order: Artiodactyla
+  family: Giraffidae
+size:
+  length: 4.6-6.1 m (height)
+  weight: 800-1200 kg
+habitat: Savannas, open woodlands, and floodplains of sub-Saharan Africa
+diet: Browsing herbivore (acacia leaves, shoots, seasonal fruits)
+capabilities:
+  - long_neck
+  - prehensile_tongue
+  - high_visual_acuity
+  - ruminant_digestion
+  - powerful_kick
+behaviors:
+  - name: forage
+    description: Browse tree canopies for leaves and shoots using height advantage.
+    inputs: vegetation_height, branch_density, time_of_day
+    outputs: energy_gain, hydration_change
+    constraints: 14-20 hours per day; slower intake during midday heat or heavy rain.
+  - name: selective_browse
+    description: Use prehensile tongue and lips to strip leaves while avoiding thorns.
+    inputs: thorn_density, branch_diameter, reach_angle
+    outputs: leaf_intake_rate, minor_thorn_contact
+    constraints: Requires branches within 2.5-5.5 m height; reduced efficiency on dense thorns.
+  - name: scan_horizon
+    description: Raise head to survey surroundings for predators and herd location.
+    inputs: ambient_light, wind_direction, herd_distance
+    outputs: threat_alert_state, orientation_adjustment
+    constraints: Performed every few minutes while feeding; extended duration when calves present.
+  - name: ruminate
+    description: Chew cud in a safe spot to improve digestion efficiency.
+    inputs: time_since_last_feed, shelter_cover
+    outputs: digestion_progress, reduced_movement_state
+    constraints: 15-30 minute bouts several times daily; only when threat_alert_state is low.
+  - name: defensive_kick
+    description: Deliver a powerful kick toward approaching predators.
+    inputs: threat_distance, target_position, stance_stability
+    outputs: deterrence_signal, potential_injury_to_predator
+    constraints: Triggered when threat_distance < 5 m; requires stable footing; high energy cost.

@@ -12,6 +12,8 @@ import { GorillaCreature } from './Gorilla/GorillaCreature.js';
 import { GorillaPen } from './Gorilla/GorillaPen.js';
 import { AnteaterCreature } from './Anteater/AnteaterCreature.js';
 import { AnteaterPen } from './Anteater/AnteaterPen.js';
+import { GiraffeCreature } from './Giraffe/GiraffeCreature.js';
+import { GiraffePen } from './Giraffe/GiraffePen.js';
 
 export const animalsRegistry = {
   cat: {
@@ -55,6 +57,14 @@ export const animalsRegistry = {
     },
     createCreature(options = {}) {
       return new AnteaterCreature(options);
+  giraffe: {
+    id: 'giraffe',
+    label: 'Giraffe',
+    createPen(scene, options = {}) {
+      return new GiraffePen(scene, options);
+    },
+    createCreature(options = {}) {
+      return new GiraffeCreature(options);
     }
   }
 };
