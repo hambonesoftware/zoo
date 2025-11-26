@@ -9,8 +9,10 @@ import { OrbitControls } from '../libs/OrbitControls.js';
  * Creates a focused, minimal scene for animal/model creation studio.
  * Returns scene, camera, controls, renderer, and view-snapping helpers.
  * @param {HTMLElement} canvasContainer
+ * @param {object} options
+ * @param {boolean} [options.preferWebGPU=true]
  */
-export function createWorld(canvasContainer) {
+export function createWorld(canvasContainer, { preferWebGPU = true } = {}) {
   // --- 1. Scene and neutral background ---
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xe8ecef);
@@ -46,7 +48,7 @@ export function createWorld(canvasContainer) {
   camera.position.set(7.5, 7.5, 7.5);
   camera.lookAt(0, 1, 0);
 
-  // --- 6. Renderer (WebGPU) ---
+  // --- 6. Renderer (WebGPU with WebGL fallback) ---
   // Use a dedicated canvas element so WebGPU can own its context cleanly.
   const existingCanvas = document.querySelector('#zoo-canvas');
   const canvas = existingCanvas || (() => {
@@ -59,14 +61,29 @@ export function createWorld(canvasContainer) {
     return c;
   })();
 
-  const renderer = new WebGPURenderer({ canvas, antialias: true });
+  let renderer = null;
+
+  if (preferWebGPU) {
+    try {
+      renderer = new WebGPURenderer({ canvas, antialias: true });
+    } catch (error) {
+      console.warn('[Zoo] Falling back to WebGLRenderer because WebGPU init failed:', error);
+    }
+  }
+
+  if (!renderer) {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  }
+
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio || 1);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  if (renderer.shadowMap) {
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  }
 
 
   // --- 7. Controls ---
