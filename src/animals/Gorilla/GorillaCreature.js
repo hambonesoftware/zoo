@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { GorillaDefinition } from './GorillaDefinition.js';
 import { GorillaGenerator } from './GorillaGenerator.js';
+import { GorillaLocation } from './GorillaLocation.js';
 
 export class GorillaCreature extends THREE.Group {
   constructor(options = {}) {
@@ -28,8 +29,18 @@ export class GorillaCreature extends THREE.Group {
       this.add(this.skeletonHelper);
     }
 
-    if (options.position) this.position.fromArray(options.position);
-    if (options.scale) this.scale.setScalar(options.scale);
+    const position = options.position || GorillaLocation.position.toArray();
+    this.position.fromArray(position);
+
+    const rotation = options.rotation || [
+      GorillaLocation.rotation.x,
+      GorillaLocation.rotation.y,
+      GorillaLocation.rotation.z
+    ];
+    this.rotation.set(...rotation);
+
+    const scale = options.scale ?? GorillaLocation.scale;
+    this.scale.setScalar(scale);
   }
 
   _buildBonesFromDefinition(boneDefs) {
