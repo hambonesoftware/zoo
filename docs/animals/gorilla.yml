@@ -1,0 +1,48 @@
+name: Gorilla
+scientific_name: Gorilla gorilla
+taxonomy:
+  class: Mammalia
+  order: Primates
+  family: Hominidae
+size:
+  length: 1.25-1.8 m (standing height)
+  weight: 100-220 kg
+habitat: Tropical and subtropical forests of Central Africa
+diet: Primarily herbivorous (leaves, stems, fruit)
+capabilities:
+  - knuckle_walking
+  - strong_upper_body
+  - opposable_thumbs
+  - complex_social_structure
+  - varied_vocalizations
+behaviors:
+  - name: forage
+    description: Search for and consume leaves, stems, and seasonal fruit.
+    inputs: vegetation_density, time_of_day
+    outputs: energy_gain, hydration_change
+    constraints: 4-6 hours spread across day; reduced during heavy rain.
+  - name: knuckle_walk
+    description: Move between feeding and resting sites using knuckle-walking gait.
+    inputs: terrain_type, travel_distance
+    outputs: position_update, energy_expenditure
+    constraints: Preferred on firm ground; pace slows on steep or slippery terrain.
+  - name: build_nest
+    description: Gather branches and foliage to form nightly or midday nests.
+    inputs: vegetation_availability, time_of_day
+    outputs: resting_nest_ready
+    constraints: Constructed daily near dusk; 5-15 minutes depending on material abundance.
+  - name: social_groom
+    description: Groom troop members to remove debris and reinforce bonds.
+    inputs: partner_count, session_duration
+    outputs: cleanliness_state, social_bond_strength
+    constraints: 5-20 minute sessions multiple times per day; requires tolerant partners.
+  - name: vocalize
+    description: Produce hoots, grunts, or belches to coordinate or signal alarms.
+    inputs: call_type, target_distance, context_threat_level
+    outputs: group_alert_state, coordination_signal
+    constraints: Alarm calls triggered by elevated threat; contact calls during travel or feeding breaks.
+  - name: chest_beat_display
+    description: Rapidly beat chest to intimidate rivals or warn intruders.
+    inputs: threat_distance, intent_level
+    outputs: intimidation_effect, deterrence_signal
+    constraints: Typically performed by dominant individuals; brief bursts when threat is close.
