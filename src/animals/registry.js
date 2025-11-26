@@ -10,6 +10,8 @@ import { ElephantCreature } from './Elephant/ElephantCreature.js';
 import { ElephantPen } from './Elephant/ElephantPen.js';
 import { GorillaCreature } from './Gorilla/GorillaCreature.js';
 import { GorillaPen } from './Gorilla/GorillaPen.js';
+import { AnteaterCreature } from './Anteater/AnteaterCreature.js';
+import { AnteaterPen } from './Anteater/AnteaterPen.js';
 
 export const animalsRegistry = {
   cat: {
@@ -42,6 +44,17 @@ export const animalsRegistry = {
     },
     createCreature(options = {}) {
       return new GorillaCreature(options);
+    }
+  },
+
+  anteater: {
+    id: 'anteater',
+    label: 'Giant Anteater',
+    createPen(scene, options = {}) {
+      return new AnteaterPen(scene, options);
+    },
+    createCreature(options = {}) {
+      return new AnteaterCreature(options);
     }
   }
 };

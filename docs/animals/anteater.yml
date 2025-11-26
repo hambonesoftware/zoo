@@ -1,0 +1,43 @@
+name: Giant Anteater
+scientific_name: Myrmecophaga tridactyla
+taxonomy:
+  class: Mammalia
+  order: Pilosa
+  family: Myrmecophagidae
+size:
+  length: 1.8-2.4 m (nose to tail tip)
+  weight: 33-50 kg
+habitat: Grasslands, savannas, tropical forests, and wetlands
+diet: Insectivorous (ants, termites)
+capabilities:
+  - elongated_tongue_with_adhesive_saliva
+  - powerful_foreclaws
+  - acute_olfaction
+  - shaggy_coat_insulation
+  - slow_metabolism
+behaviors:
+  - name: forage
+    description: Track ant and termite mounds using olfaction while sweeping the ground at a slow, energy-efficient pace.
+    inputs: terrain_type, scent_intensity, mound_density
+    outputs: target_mound_location, energy_gain
+    constraints: 8-10 hours per day; slower travel during midday heat; avoids saturated ground that collapses burrows.
+  - name: tear_mound
+    description: Use foreclaws to break open insect mounds or rotting logs to expose galleries.
+    inputs: mound_hardness, mound_size
+    outputs: opening_size, disturbance_alert
+    constraints: 1-2 minutes per mound; limited to 2-3 consecutive mounds before resting claws to avoid injury.
+  - name: tongue_feed
+    description: Rapidly extend the tongue to gather ants and termites from an opened mound.
+    inputs: insect_density, tongue_extension_time
+    outputs: energy_gain, hydration_loss
+    constraints: Up to 150 tongue flicks per minute; 40-60 seconds per feeding bout before relocating.
+  - name: thermoregulate
+    description: Seek shade, water edges, or ventilation to prevent overheating while foraging.
+    inputs: ambient_temperature, shade_availability, humidity
+    outputs: temperature_drop, reduced_activity
+    constraints: Initiates above 30°C or high solar load; reduces movement speed by roughly 30% while active.
+  - name: sleep
+    description: Rest curled with the tail draped over the body for insulation and concealment.
+    inputs: shelter_type, time_of_day
+    outputs: energy_recovery, heat_retention
+    constraints: 14-16 hours daily with midday preference; interrupted by high threat levels or heavy rain.
