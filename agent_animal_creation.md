@@ -80,6 +80,7 @@ behaviors:
 5. **Map linkage**: Document capability–behavior mappings; remove behaviors with no supporting capability.
 6. **Validate**: Run the validation workflow and assign a quality score (target 4–5).
 7. **Save**: Write the YAML using the standard schema to `docs/animals/<animal>.yml` (or provided path).
+8. **Generate code scaffolding**: Create a new folder under `src/animals/<AnimalName>` with the required JS files (see below) so the creature can load in-game.
 
 ## Validation Workflow
 1. **Schema compliance**: Ensure all fields exist and types match the schema.
@@ -92,6 +93,33 @@ behaviors:
    - 2–3: Complete schema but weak linkage or vague constraints.
    - 4: Complete with clear linkage and constraints.
    - 5: Complete, linked, and includes at least one distinctive capability-driven behavior.
+
+## Code Scaffolding Deliverables
+When finalizing a new creature, generate the implementation shell under `src/animals/<AnimalName>` with these files:
+
+- `<AnimalName>Definition.js` — imports the YAML from `docs/animals/<animal>.yml` and exposes structured properties (size, diet, capabilities, behaviors).
+- `<AnimalName>Behavior.js` — encapsulates decision logic; wire inputs/outputs to behaviors defined in the YAML.
+- `<AnimalName>Locomotion.js` — movement helpers (gaits, pathing, speed tuning) referencing size and capabilities.
+- `<AnimalName>Creature.js` — assembles geometry, materials, behavior, and locomotion into a single Three.js object.
+- `<AnimalName>Generator.js` — procedural geometry setup (body, limbs, rig anchors).
+- `<AnimalName>SkinNode.js` — node-based skinning graph or skeletal bindings.
+- `<AnimalName>SkinTexture.js` — texture/material authoring (colors, roughness, patterns) with hooks for future art.
+- `<AnimalName>Pen.js` — pen/staging environment matching existing animals (lights, floor markers, bounds) and instantiating the creature.
+- `<AnimalName>Location.js` — exports canonical spawn/pen placement info (scene coordinates, default rotation, scale multiplier) for world loaders.
+
+### Scaffolding template (use exact exports; swap names per animal)
+```js
+// src/animals/<AnimalName>/<AnimalName>Location.js
+import * as THREE from 'three';
+
+export const <AnimalName>Location = {
+  position: new THREE.Vector3(0, 0, 0),
+  rotation: new THREE.Euler(0, 0, 0),
+  scale: 1.0
+};
+```
+
+Ensure `src/animals/registry.js` registers the new creature and pen so the development studio can discover it.
 
 ## Completeness Checklist (fill before finalizing)
 - [ ] All required fields present with concrete values and units where applicable.
