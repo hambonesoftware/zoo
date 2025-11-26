@@ -1,14 +1,12 @@
 // src/animals/Anteater/AnteaterDefinition.js
 
 import YAML from 'yaml';
-import anteaterYaml from '../../../docs/animals/anteater.yml?raw';
 
-const anteaterSpec = YAML.parse(anteaterYaml);
+const anteaterYamlUrl = new URL('../../../docs/animals/anteater.yml', import.meta.url);
 
-export const AnteaterDefinition = {
-  ...anteaterSpec,
-  behaviors: anteaterSpec.behaviors || [],
-  capabilities: anteaterSpec.capabilities || [],
+const AnteaterDefinition = {
+  behaviors: [],
+  capabilities: [],
   getBehaviorNames() {
     return this.behaviors.map((behavior) => behavior.name);
   },
@@ -25,3 +23,22 @@ export const AnteaterDefinition = {
     };
   }
 };
+
+async function loadAnteaterSpec() {
+  try {
+    const response = await fetch(anteaterYamlUrl.href);
+    const yamlText = await response.text();
+    const parsed = YAML.parse(yamlText) || {};
+
+    Object.assign(AnteaterDefinition, parsed, {
+      behaviors: parsed.behaviors || [],
+      capabilities: parsed.capabilities || []
+    });
+  } catch (error) {
+    console.error('[AnteaterDefinition] Failed to load anteater.yml:', error);
+  }
+}
+
+loadAnteaterSpec();
+
+export { AnteaterDefinition };
