@@ -14,6 +14,7 @@ export class GorillaPen {
   constructor(scene, options = {}) {
     this.scene = scene;
     this.options = options;
+    this.label = 'Gorilla';
 
     this.radius = options.radius || 2.0;
     this.padHeight = options.padHeight || 0.17;
@@ -259,6 +260,13 @@ export class GorillaPen {
     sprite.position.set(x, y + 0.06, z);
     sprite.name = `AxisLabel_${text}`;
     group.add(sprite);
+  }
+
+  /**
+   * Returns the root Object3D for OBJ export.
+   */
+  getExportRoot() {
+    return this.group || null;
   }
 
   update(dt) {

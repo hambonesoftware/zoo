@@ -87,6 +87,14 @@ export class Zoo {
   }
 
   /**
+   * Returns the primary/first pen in the zoo, useful for studio tooling.
+   */
+  getActivePen() {
+    if (!this.pens || this.pens.length === 0) return null;
+    return this.pens[0];
+  }
+
+  /**
    * Updates all pens and their animals.
    * Call once per animation frame.
    * @param {number} dt - Delta time in seconds.
