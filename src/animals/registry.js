@@ -27,7 +27,13 @@ export const animalsRegistry = {
     id: 'elephant',
     label: 'Elephant',
     createPen(scene, options = {}) {
-      return new ElephantPen(scene, options);
+      const pen = new ElephantPen(scene, options);
+
+      if (typeof pen.fitCameraToElephant === 'function' && options.camera) {
+        pen.fitCameraToElephant(options.camera, options.controls || null);
+      }
+
+      return pen;
     },
     createCreature(options = {}) {
       return new ElephantCreature(options);

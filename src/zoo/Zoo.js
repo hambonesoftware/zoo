@@ -23,6 +23,9 @@ export class Zoo {
     this.options = options;
     this.pens = [];
 
+    this.camera = options.camera;
+    this.controls = options.controls;
+
     const penCount = options.penCount ?? 1;
     const spacing = options.spacing ?? 10;
     const animalType = options.animalType || 'cat';
@@ -59,7 +62,11 @@ export class Zoo {
 
     for (let i = 0; i < penCountFinal; i++) {
       const position = new THREE.Vector3(i * spacingFinal, 0, 0);
-      const pen = entry.createPen(this.scene, { position });
+      const pen = entry.createPen(this.scene, {
+        position,
+        camera: this.camera,
+        controls: this.controls
+      });
       this.pens.push(pen);
     }
 
