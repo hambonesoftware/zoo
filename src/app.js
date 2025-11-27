@@ -10,6 +10,7 @@ import { AnimalMusicBrain } from './music/AnimalMusicBrain.js';
 import { MUSIC_PROFILES, getProfileForAnimal } from './music/MusicProfiles.js';
 import { MusicEngine } from './music/MusicEngine.js';
 import { NoteHighway } from './ui/NoteHighway.js';
+import { downloadAsOBJ } from './debug/exporters.js';
 
 function isWebGPUSupported() {
   try {
@@ -65,6 +66,7 @@ class App {
     // UI wiring
     this.setupAnimalDropdown(defaultAnimalType);
     this.setupDebugPanel();
+    this.setupExportHooks();
 
     // Bind event listeners
     window.addEventListener('resize', this.onWindowResize.bind(this));
@@ -155,6 +157,7 @@ class App {
         <div>Bounds (L×W×H m): <span class="value" id="zoo-debug-bounds">-</span></div>
         <div>Behavior: <span class="value" id="zoo-debug-behavior">-</span></div>
         <div>State time: <span class="value" id="zoo-debug-state-time">0.000</span></div>
+        <button id="zoo-debug-export-obj" type="button">Export OBJ (debug)</button>
       `;
       document.body.appendChild(panel);
     }
@@ -168,6 +171,25 @@ class App {
       behavior: document.getElementById('zoo-debug-behavior'),
       stateTime: document.getElementById('zoo-debug-state-time')
     };
+
+    this.debugExportButton = document.getElementById('zoo-debug-export-obj');
+  }
+
+  setupExportHooks() {
+    // Debug-only OBJ export shortcut.
+    this._exportKeyHandler = (event) => {
+      if (event.key === 'O') {
+        exportCurrentPenAsOBJ(this);
+      }
+    };
+
+    window.addEventListener('keydown', this._exportKeyHandler);
+
+    if (this.debugExportButton) {
+      this.debugExportButton.addEventListener('click', () => {
+        exportCurrentPenAsOBJ(this);
+      });
+    }
   }
 
 
@@ -249,6 +271,36 @@ class App {
       }
     }
   }
+}
+
+export function exportCurrentPenAsOBJ(app) {
+  const zoo = app ? app.zoo : null;
+  const pen = zoo
+    ? typeof zoo.getActivePen === 'function'
+      ? zoo.getActivePen()
+      : zoo.pens && zoo.pens.length > 0
+        ? zoo.pens[0]
+        : null
+    : null;
+
+  if (!pen || typeof pen.getExportRoot !== 'function') {
+    console.warn('[Zoo] No exportable pen or getExportRoot() not implemented.');
+    return;
+  }
+
+  const root = pen.getExportRoot();
+  if (!root) {
+    console.warn('[Zoo] Pen returned no export root.');
+    return;
+  }
+
+  const animalType = zoo && zoo.currentAnimalType ? zoo.currentAnimalType : null;
+  const registryEntry = animalType ? animalsRegistry[animalType] : null;
+  const label = pen.label || (registryEntry ? registryEntry.label : null) || animalType || 'animal';
+  const safeLabel = label.toString().trim().toLowerCase().replace(/\s+/g, '_');
+  const filename = `${safeLabel || 'animal'}_highpoly.obj`;
+
+  downloadAsOBJ(root, filename);
 }
 
 // Create and start the app
