@@ -179,6 +179,7 @@ class App {
     // Debug-only OBJ export shortcut.
     this._exportKeyHandler = (event) => {
       if (event.key === 'O') {
+        console.info('[Zoo] Debug OBJ export triggered via keyboard.');
         exportCurrentPenAsOBJ(this);
       }
     };
@@ -187,8 +188,10 @@ class App {
 
     if (this.debugExportButton) {
       this.debugExportButton.addEventListener('click', () => {
+        console.info('[Zoo] Debug OBJ export button clicked.');
         exportCurrentPenAsOBJ(this);
       });
+      console.info('[Zoo] Debug OBJ export button initialized.');
     }
   }
 
@@ -275,6 +278,16 @@ class App {
 
 export function exportCurrentPenAsOBJ(app) {
   const zoo = app ? app.zoo : null;
+
+  if (!zoo) {
+    console.warn('[Zoo] Cannot export OBJ: zoo instance missing on app.');
+    return;
+  }
+
+  console.info('[Zoo] Attempting OBJ export for current pen.', {
+    animalType: zoo.currentAnimalType,
+    penCount: Array.isArray(zoo.pens) ? zoo.pens.length : undefined
+  });
   const pen = zoo
     ? typeof zoo.getActivePen === 'function'
       ? zoo.getActivePen()
@@ -300,6 +313,7 @@ export function exportCurrentPenAsOBJ(app) {
   const safeLabel = label.toString().trim().toLowerCase().replace(/\s+/g, '_');
   const filename = `${safeLabel || 'animal'}_highpoly.obj`;
 
+  console.info('[Zoo] Exporting OBJ with filename:', filename);
   downloadAsOBJ(root, filename);
 }
 
