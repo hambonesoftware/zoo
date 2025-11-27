@@ -49,4 +49,10 @@ export class GiraffePen {
 
     scene?.add(this.group);
   }
+
+  update(dt) {
+    if (this.creature && typeof this.creature.update === 'function') {
+      this.creature.update(dt);
+    }
+  }
 }

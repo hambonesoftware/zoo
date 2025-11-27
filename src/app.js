@@ -52,7 +52,9 @@ class App {
     this.audioReady = false;
     this.setupAudioBootstrap();
 
-    const defaultAnimalType = 'cat';
+    // Default to the newly added giraffe when available; fall back to cat so
+    // the app still starts cleanly if the giraffe bundle is unavailable.
+    const defaultAnimalType = animalsRegistry.giraffe ? 'giraffe' : 'cat';
 
     // Create the zoo with a default animal
     this.zooOptions = {
