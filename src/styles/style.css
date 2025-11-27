@@ -163,6 +163,10 @@ a:hover { color: #fff; }
   pointer-events: none;
 }
 
+#zoo-debug-panel button {
+  pointer-events: auto;
+}
+
 #zoo-debug-panel h4 {
   margin: 0 0 4px 0;
   font-size: 0.8rem;
