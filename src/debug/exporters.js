@@ -12,8 +12,20 @@ export function downloadAsOBJ(object3D, filename) {
     return;
   }
 
-  const exporter = new OBJExporter();
-  const objText = exporter.parse(object3D);
+  console.info('[downloadAsOBJ] Starting OBJ export.', {
+    filename,
+    hasObject: !!object3D,
+    childCount: Array.isArray(object3D.children) ? object3D.children.length : undefined
+  });
+
+  let objText;
+  try {
+    const exporter = new OBJExporter();
+    objText = exporter.parse(object3D);
+  } catch (error) {
+    console.error('[downloadAsOBJ] Failed to parse OBJ from object3D.', error);
+    return;
+  }
 
   const blob = new Blob([objText], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
