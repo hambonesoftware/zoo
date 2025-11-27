@@ -43,7 +43,7 @@ export function createWorld(canvasContainer, { preferWebGPU = true } = {}) {
 
   // --- 5. Camera (Perspective, centered, isometric default) ---
   const aspect = window.innerWidth / window.innerHeight;
-  const camera = new THREE.PerspectiveCamera(54, aspect, 0.1, 100);
+  const camera = new THREE.PerspectiveCamera(45, aspect, 0.05, 1000);
   // ISO view: 3/4 angle, slightly above
   camera.position.set(7.5, 7.5, 7.5);
   camera.lookAt(0, 1, 0);
@@ -94,8 +94,8 @@ export function createWorld(canvasContainer, { preferWebGPU = true } = {}) {
   controls.dampingFactor = 0.10;
   controls.enableDamping = true;
   controls.target.set(0, 1, 0);
-  controls.minDistance = 3;
-  controls.maxDistance = 40;
+  controls.minDistance = 0.5;
+  controls.maxDistance = 25;
   controls.update();
 
   // --- 8. Responsive Resize ---

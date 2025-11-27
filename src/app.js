@@ -58,7 +58,9 @@ class App {
     this.zooOptions = {
       penCount: 1,
       spacing: 10,
-      animalType: defaultAnimalType
+      animalType: defaultAnimalType,
+      camera: this.camera,
+      controls: this.controls
     };
 
     this.zoo = new Zoo(this.scene, this.zooOptions);
@@ -208,6 +210,11 @@ class App {
         this.camera = fallback.camera;
         this.controls = fallback.controls;
         this.renderer = fallback.renderer;
+        this.zooOptions = {
+          ...this.zooOptions,
+          camera: this.camera,
+          controls: this.controls
+        };
         this.zoo = new Zoo(this.scene, this.zooOptions);
       }
     }

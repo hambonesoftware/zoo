@@ -220,10 +220,10 @@ export function createWorld(canvasContainer) {
 
   // --- 9. Camera
   const camera = new THREE.PerspectiveCamera(
-    58,
+    45,
     window.innerWidth / window.innerHeight,
-    0.1,
-    2000
+    0.05,
+    1000
   );
   camera.position.set(74, 50, 110);
   camera.lookAt(0, 7, 0);
@@ -258,8 +258,8 @@ export function createWorld(canvasContainer) {
   controls.dampingFactor = 0.09;
   controls.enableDamping = true;
   controls.maxPolarAngle = Math.PI * 0.49;
-  controls.minDistance = 8;
-  controls.maxDistance = 400;
+  controls.minDistance = 0.5;
+  controls.maxDistance = 25;
   controls.target.set(0, 8, 0);
   controls.update();
 

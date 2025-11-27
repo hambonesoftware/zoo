@@ -96,7 +96,6 @@ export function generateTailGeometry(skeleton, options = {}) {
       binormalsFrame.push(b);
     } else {
       const nPrev = normalsFrame[i - 1];
-      const bPrev = binormalsFrame[i - 1];
 
       // Parallel transport: project previous normal onto plane orthogonal to t
       let n = nPrev
@@ -196,3 +195,4 @@ export function generateTailGeometry(skeleton, options = {}) {
 
   return geometry;
 }
+

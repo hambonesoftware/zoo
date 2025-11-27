@@ -309,6 +309,42 @@ export class ElephantPen {
     scene.add(this.group);
   }
 
+  fitCameraToElephant(camera, controls) {
+    if (!this.Elephant) return;
+
+    // 1) Compute bounding box of the elephant in world space
+    const box = new THREE.Box3().setFromObject(this.Elephant);
+    if (!box.isEmpty()) {
+      // 2) Get box size and center
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
+
+      // 3) Choose distance so the whole animal fits
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = camera.fov * (Math.PI / 180);
+      const fitHeightDistance = maxDim / (2 * Math.tan(fov / 2));
+      const fitWidthDistance = fitHeightDistance / camera.aspect;
+      const distance = Math.max(fitHeightDistance, fitWidthDistance);
+
+      // 4) Move camera back along its current direction
+      const dir = new THREE.Vector3(0, 0, 1);
+      dir.applyQuaternion(camera.quaternion);
+      const newPos = center.clone().add(dir.multiplyScalar(distance * 1.3));
+
+      camera.position.copy(newPos);
+      camera.near = distance * 0.05;
+      camera.far = distance * 20.0;
+      camera.updateProjectionMatrix();
+
+      if (controls) {
+        controls.target.copy(center);
+        controls.update();
+      }
+    }
+  }
+
   /**
    * Add a labeled axis sprite at a 3D world location (relative to group).
    */

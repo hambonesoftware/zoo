@@ -146,10 +146,8 @@ export class ElephantGenerator {
     // Radii indices map to: [Hips, Ribcage, NeckBase, HeadBase]
     const torsoGeometry = generateTorsoGeometry(skeleton, {
       bones: ['spine_base', 'spine_mid', 'spine_neck', 'head'],
-      // Slightly smooth the transitions between hips, ribcage and neck
-      radii: [1.15 * headScale, 1.35, 1.15, 0.9 * headScale],
-      // Smooth-mode sides; TorsoGenerator will override with
-      // lowPolySegments when lowPoly === true.
+      // [hips, ribcage, neck base, head / neck tip]
+      radii: [0.95 * headScale, 1.4, 1.15, 0.9 * headScale],
       sides: 28,
       radiusProfile: torsoRadiusProfile,
       lowPoly,
