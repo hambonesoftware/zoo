@@ -179,47 +179,57 @@ export class ElephantLocomotion {
    * if inspecting something.  No forward movement takes place.
    */
   updateCurious(dt, root, bones) {
-    // Keep the body stationary at base height
-    root.position.set(0, this.baseHeight, 0);
-    // Slow idle sway of the body
-    root.rotation.z = 0.02 * Math.sin(this._stateTime * 1.5);
+	  // Keep the body stationary at base height
+	  root.position.set(0, this.baseHeight, 0);
+	  // Slow idle sway of the body
+	  root.rotation.z = 0.02 * Math.sin(this._stateTime * 1.5);
 
-    const spineNeck = bones['spine_neck'];
-    const head = bones['head'];
-    const trunkBase = bones['trunk_base'];
-    const trunkMid = bones['trunk_mid'];
-    const trunkTip = bones['trunk_tip'];
+	  const spineNeck = bones['spine_neck'];
+	  const head      = bones['head'];
+	  const trunkBase = bones['trunk_base'];
+	  const trunkMid1 = bones['trunk_mid1'];
+	  const trunkMid2 = bones['trunk_mid2'];
+	  const trunkTip  = bones['trunk_tip'];
 
-    // Raise the head and look around gently
-    if (spineNeck) {
-      spineNeck.rotation.x = 0.1 + 0.05 * Math.sin(this._stateTime * 2.0);
-      spineNeck.rotation.y = 0.1 * Math.sin(this._stateTime * 1.0);
-    }
-    if (head) {
-      head.rotation.x = -0.05 + 0.07 * Math.sin(this._stateTime * 2.5);
-      head.rotation.y = 0.08 * Math.sin(this._stateTime * 1.7);
-    }
-    // Lift the trunk
-    const lift = 0.3 + 0.1 * Math.sin(this._stateTime * 2.2);
-    if (trunkBase) {
-      trunkBase.rotation.x = -lift * 0.5;
-      trunkBase.rotation.y = 0.0;
-    }
-    if (trunkMid) {
-      trunkMid.rotation.x = -lift * 0.8;
-      trunkMid.rotation.y = 0.0;
-    }
-    if (trunkTip) {
-      trunkTip.rotation.x = -lift;
-      trunkTip.rotation.y = 0.0;
-    }
-    // Ears flick slightly during curiosity
-    const earLeft = bones['ear_left'];
-    const earRight = bones['ear_right'];
-    const flap = 0.15 * Math.sin(this._stateTime * 3.0);
-    if (earLeft) earLeft.rotation.z = flap;
-    if (earRight) earRight.rotation.z = -flap;
-  }
+	  // Raise the head and look around gently
+	  if (spineNeck) {
+		spineNeck.rotation.x = 0.1 + 0.05 * Math.sin(this._stateTime * 2.0);
+		spineNeck.rotation.y = 0.1 * Math.sin(this._stateTime * 1.0);
+	  }
+	  if (head) {
+		head.rotation.x = -0.05 + 0.07 * Math.sin(this._stateTime * 2.5);
+		head.rotation.y = 0.08 * Math.sin(this._stateTime * 1.7);
+	  }
+
+	  // Lift the trunk in a smooth S-curve; base moves least, tip most
+	  const lift = 0.3 + 0.1 * Math.sin(this._stateTime * 2.2);
+
+	  if (trunkBase) {
+		trunkBase.rotation.x = -lift * 0.4;
+		trunkBase.rotation.y = -math.PI/4;
+	  }
+	  if (trunkMid1) {
+		trunkMid1.rotation.x = -lift * 0.7;
+		trunkMid1.rotation.y = -math.PI/4;
+	  }
+	  if (trunkMid2) {
+		trunkMid2.rotation.x = -lift * 0.9;
+		trunkMid2.rotation.y = -math.PI/4;
+	  }
+	  if (trunkTip) {
+		trunkTip.rotation.x = -lift;
+		trunkTip.rotation.y = -math.PI/4;
+	  }
+
+	  // Ears flick slightly during curiosity
+	  const earLeft  = bones['ear_left'];
+	  const earRight = bones['ear_right'];
+	  const flap = 0.15 * Math.sin(this._stateTime * 3.0);
+	  if (earLeft)  earLeft.rotation.z = flap;
+	  if (earRight) earRight.rotation.z = -flap;
+	}
+
+
 
   /**
    * Apply damped spring secondary motion to the trunk, ears and tail.
@@ -228,11 +238,18 @@ export class ElephantLocomotion {
    * physics each frame: acceleration is proportional to the difference
    * between the target and current angle minus a damping term.
    */
+    /**
+   * Apply damped spring secondary motion to the trunk, ears and tail.
+   * This introduces a lagging motion that follows the elephant's
+   * forward velocity and turning rate. The springs integrate simple
+   * physics each frame: acceleration is proportional to the difference
+   * between the target and current angle minus a damping term.
+   */
   applySecondaryMotion(dt, bones) {
     // Determine the desired amplitude based on current state.  When
     // wandering we use the wanderSpeed; otherwise the target speed is 0
     const speed = this.state === 'wander' ? this.wanderSpeed : 0;
-    // Target swing for trunk/ears/tail scales with speed
+    // Target swing / bulge scales with speed
     const trunkTarget = speed * 0.4;
     const earsTarget  = speed * 0.3;
     const tailTarget  = speed * 0.5;
@@ -240,22 +257,46 @@ export class ElephantLocomotion {
     const stiffness = 10.0;
     const damping = 5.0;
 
-    // --- Trunk spring ---
+    // --- Trunk spring (thickness / breathing, not twist) ---
     {
       const s = this._spring.trunk;
       const acc = (trunkTarget - s.angle) * stiffness - s.velocity * damping;
       s.velocity += acc * dt;
       s.angle += s.velocity * dt;
-      // Apply to trunk bones if they exist
+
+      // Clamp the bulge so we never squash the trunk too much.
+      const maxBulge = 0.08;
+      const bulge = THREE.MathUtils.clamp(s.angle, -maxBulge, maxBulge);
+
+      // 1.0 = rest thickness, >1 = thicker, <1 = thinner
+      const baseScale = 1.0;
+      const baseXZ = baseScale + bulge;         // strongest near the head
+      const midXZ  = baseScale + bulge * 0.75;  // medium through the mid
+      const tipXZ  = baseScale + bulge * 0.5;   // weakest at the tip
+
       const trunkBase = bones['trunk_base'];
       const trunkMid1 = bones['trunk_mid1'] || bones['trunk_mid'];
       const trunkMid2 = bones['trunk_mid2'];
-      const trunkTip = bones['trunk_tip'];
-      if (trunkBase) trunkBase.rotation.y += s.angle * 0.55;
-      if (trunkMid1) trunkMid1.rotation.y += s.angle * 0.4;
-      if (trunkMid2) trunkMid2.rotation.y += s.angle * 0.3;
-      if (trunkTip) trunkTip.rotation.y += s.angle * 0.18;
+      const trunkTip  = bones['trunk_tip'];
+
+      if (trunkBase) {
+        trunkBase.scale.x = baseXZ;
+        trunkBase.scale.z = baseXZ;
+      }
+      if (trunkMid1) {
+        trunkMid1.scale.x = midXZ;
+        trunkMid1.scale.z = midXZ;
+      }
+      if (trunkMid2) {
+        trunkMid2.scale.x = midXZ;
+        trunkMid2.scale.z = midXZ;
+      }
+      if (trunkTip) {
+        trunkTip.scale.x = tipXZ;
+        trunkTip.scale.z = tipXZ;
+      }
     }
+
     // --- Ears spring ---
     {
       const s = this._spring.ears;
@@ -268,6 +309,7 @@ export class ElephantLocomotion {
       if (earLeft) earLeft.rotation.z += s.angle;
       if (earRight) earRight.rotation.z -= s.angle;
     }
+
     // --- Tail spring ---
     {
       const s = this._spring.tail;
@@ -275,38 +317,53 @@ export class ElephantLocomotion {
       s.velocity += acc * dt;
       s.angle += s.velocity * dt;
       const tailBase = bones['tail_base'];
-      const tailMid = bones['tail_mid'];
-      const tailTip = bones['tail_tip'];
+      const tailMid  = bones['tail_mid'];
+      const tailTip  = bones['tail_tip'];
       if (tailBase) tailBase.rotation.y += s.angle * 0.6;
-      if (tailMid) tailMid.rotation.y += s.angle * 0.4;
-      if (tailTip) tailTip.rotation.y += s.angle * 0.2;
+      if (tailMid)  tailMid.rotation.y  += s.angle * 0.4;
+      if (tailTip)  tailTip.rotation.y  += s.angle * 0.2;
     }
   }
 
-  applyTrunkIdle(bones, t) {
-    const trunkBase = bones['trunk_base'];
-    const trunkMid = bones['trunk_mid'];
-    const trunkTip = bones['trunk_tip'];
 
-    if (!trunkBase && !trunkMid && !trunkTip) return;
+  applyTrunkWalk(bones, t, phase) {
+	  const trunkBase = bones['trunk_base'];
+	  const trunkMid1 = bones['trunk_mid1'];
+	  const trunkMid2 = bones['trunk_mid2'];
+	  const trunkTip  = bones['trunk_tip'];
 
-    // Very gentle rhythmic sway
-    const swaySlow = Math.sin(t * 0.5) * 0.15;  // horizontal yaw
-    const dipSlow = Math.sin(t * 0.65) * 0.08;  // pitch
+	  if (!trunkBase && !trunkMid1 && !trunkMid2 && !trunkTip) return;
 
-    if (trunkBase) {
-      trunkBase.rotation.y = swaySlow * 0.7;
-      trunkBase.rotation.x = dipSlow * 0.4;
-    }
-    if (trunkMid) {
-      trunkMid.rotation.y = swaySlow * 0.4;
-      trunkMid.rotation.x = dipSlow * 0.7;
-    }
-    if (trunkTip) {
-      trunkTip.rotation.y = swaySlow * 0.3;
-      trunkTip.rotation.x = dipSlow * 0.9;
-    }
-  }
+	  // Walking adds a rhythmic trunk swing synchronized with gait
+	  const gaitSway = Math.sin(phase) * 0.25;      // left/right
+	  const gaitDip  = Math.sin(phase * 2.0) * 0.1; // up/down
+
+	  // Idle baseline sway layered in for organic motion
+	  const idleSway = Math.sin(t * 0.6) * 0.08;
+	  const idleDip  = Math.sin(t * 0.8) * 0.05;
+
+	  const sway = gaitSway + idleSway;
+	  const dip  = gaitDip + idleDip;
+
+	  // Base stays fairly straight; motion grows toward the tip
+	  if (trunkBase) {
+		trunkBase.rotation.y = sway * 0.15;
+		trunkBase.rotation.x = dip * 0.3;
+	  }
+	  if (trunkMid1) {
+		trunkMid1.rotation.y = sway * 0.35;
+		trunkMid1.rotation.x = dip * 0.6;
+	  }
+	  if (trunkMid2) {
+		trunkMid2.rotation.y = sway * 0.5;
+		trunkMid2.rotation.x = dip * 0.85;
+	  }
+	  if (trunkTip) {
+		trunkTip.rotation.y = sway * 0.65;
+		trunkTip.rotation.x = dip * 1.0;
+	  }
+	}
+
 
   applyEarIdle(bones, t) {
     const earLeft = bones['ear_left'];

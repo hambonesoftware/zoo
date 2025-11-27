@@ -147,7 +147,7 @@ export class ElephantPen {
     const triadColors = [0x227bc4, 0xb31e1e, 0x4bc44f];
     const markerY = this.padHeight + this.markerHeight / 2 + 0.005;
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 3; i += 1) {
       const angle = (i * Math.PI * 2) / 3;
       const x = Math.cos(angle) * (this.radius * 0.81);
       const z = Math.sin(angle) * (this.radius * 0.81);
@@ -179,7 +179,7 @@ export class ElephantPen {
     const triadLineGeo = new THREE.BufferGeometry();
     const points = [];
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 4; i += 1) {
       const angle = (i * Math.PI * 2) / 3;
       points.push(
         new THREE.Vector3(
@@ -247,10 +247,26 @@ export class ElephantPen {
     const elephantScale =
       typeof options.scale === 'number' ? options.scale : 0.75;
 
-    this.Elephant = new ElephantCreature({
+    // Allow the pen to control low-poly mode explicitly, but default to
+    // whatever ElephantCreature / ElephantGenerator decide if neither
+    // lowPolyElephant nor lowPoly is specified.
+    const lowPolyOption =
+      options.lowPolyElephant !== undefined
+        ? !!options.lowPolyElephant
+        : (options.lowPoly !== undefined ? !!options.lowPoly : undefined);
+
+    const creatureOptions = {
       scale: elephantScale,
-      debug: !!options.debugElephant
-    });
+      debug: !!options.debugElephant,
+      bodyColor: options.bodyColor,
+      variantSeed: options.variantSeed
+    };
+
+    if (lowPolyOption !== undefined) {
+      creatureOptions.lowPoly = lowPolyOption;
+    }
+
+    this.Elephant = new ElephantCreature(creatureOptions);
 
     // Center on pad, slightly lifted so toes sit nicely on the surface.
     const elephantY = this.padHeight + 1.5;

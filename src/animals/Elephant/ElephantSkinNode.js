@@ -24,6 +24,14 @@ export function createElephantSkinMaterial(options = {}) {
   const material = new MeshStandardNodeMaterial();
   material.skinning = true; // Enable skinning for the SkinnedMesh
 
+  // When we are in low-poly mode, use flat shading so each face becomes
+  // a visible facet rather than a smooth gradient.
+  const lowPoly = options.lowPoly === true || options.flatShading === true;
+  if (lowPoly) {
+    material.flatShading = true;
+    material.needsUpdate = true;
+  }
+
   // ------------------------------------------------------------
   // 1) Low-frequency macro shading based on local position
   // ------------------------------------------------------------

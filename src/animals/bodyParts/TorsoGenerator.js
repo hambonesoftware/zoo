@@ -1,19 +1,47 @@
 // src/animals/bodyParts/TorsoGenerator.js
 
 import * as THREE from 'three';
+import * as BufferGeometryUtils from '../../libs/BufferGeometryUtils.js';
 
 /**
  * Wrap rings around the supplied spine bones to form a simple torso volume.
  * This mirrors the signature expected by the animal generators: it accepts a
  * skeleton plus a set of bone names and optional radii/sides overrides.
+ *
+ * New options supported:
+ *   - lowPoly: boolean
+ *       When true, uses fewer radial segments and can optionally weld vertices
+ *       for a more faceted, low-poly look.
+ *   - lowPolySegments: number
+ *       Optional explicit segment count when lowPoly is true.
+ *   - lowPolyWeldTolerance: number
+ *       If > 0 and lowPoly is true, mergeVertices(geometry, tolerance) is
+ *       applied after building the torso, and normals are recomputed.
  */
 export function generateTorsoGeometry(skeleton, options = {}) {
   const bones = options.bones || [];
   const radii = options.radii || [];
-  const sides = typeof options.sides === 'number' ? options.sides : 24;
-  const radiusProfile = typeof options.radiusProfile === 'function'
-    ? options.radiusProfile
-    : null;
+
+  const lowPoly = options.lowPoly === true;
+  const lowPolySegments =
+    typeof options.lowPolySegments === 'number' && options.lowPolySegments >= 3
+      ? options.lowPolySegments
+      : 9; // default radial segments for low-poly mode
+
+  const baseSides =
+    typeof options.sides === 'number' && options.sides >= 3
+      ? options.sides
+      : 24;
+
+  const sides = lowPoly ? lowPolySegments : baseSides;
+
+  const lowPolyWeldTolerance =
+    typeof options.lowPolyWeldTolerance === 'number' && options.lowPolyWeldTolerance > 0
+      ? options.lowPolyWeldTolerance
+      : 0;
+
+  const radiusProfile =
+    typeof options.radiusProfile === 'function' ? options.radiusProfile : null;
 
   const boneIndexMap = {};
   skeleton.bones.forEach((bone, idx) => {
@@ -26,13 +54,42 @@ export function generateTorsoGeometry(skeleton, options = {}) {
     const pos = bone
       ? new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld)
       : new THREE.Vector3();
-    return { x: pos.x, y: pos.y, z: pos.z, boneIndex: boneIndexMap[name] ?? 0 };
+    return {
+      x: pos.x,
+      y: pos.y,
+      z: pos.z,
+      boneIndex: boneIndexMap[name] ?? 0,
+    };
   });
 
-  return buildTorsoFromSpine(spine, radii, sides, radiusProfile);
+  const geometry = buildTorsoFromSpine(
+    spine,
+    radii,
+    sides,
+    radiusProfile
+  );
+
+  if (lowPoly && lowPolyWeldTolerance > 0) {
+    // For low-poly mode, optionally weld nearby vertices to create larger
+    // facets and recompute normals for flat shading.
+    geometry.deleteAttribute('normal');
+    const welded = BufferGeometryUtils.mergeVertices(
+      geometry,
+      lowPolyWeldTolerance
+    );
+    welded.computeVertexNormals();
+    return welded;
+  }
+
+  return geometry;
 }
 
-function buildTorsoFromSpine(spineBones, radii = [], segments = 8, radiusProfile = null) {
+function buildTorsoFromSpine(
+  spineBones,
+  radii = [],
+  segments = 8,
+  radiusProfile = null
+) {
   const geometry = new THREE.BufferGeometry();
   const vertices = [];
   const indices = [];
@@ -47,7 +104,7 @@ function buildTorsoFromSpine(spineBones, radii = [], segments = 8, radiusProfile
   const normal = new THREE.Vector3(1, 0, 0);
   const binormal = new THREE.Vector3(0, 1, 0);
 
-  for (let ringIndex = 0; ringIndex < rings; ringIndex++) {
+  for (let ringIndex = 0; ringIndex < rings; ringIndex += 1) {
     const bone = spineBones[ringIndex];
     const center = new THREE.Vector3(bone.x, bone.y, bone.z);
     const sNormalized = rings > 1 ? ringIndex / (rings - 1) : 0;
@@ -65,7 +122,7 @@ function buildTorsoFromSpine(spineBones, radii = [], segments = 8, radiusProfile
 
     const angleStep = (2 * Math.PI) / segments;
 
-    for (let sideIndex = 0; sideIndex < segments; sideIndex++) {
+    for (let sideIndex = 0; sideIndex < segments; sideIndex += 1) {
       const theta = (sideIndex / segments) * Math.PI * 2.0;
 
       let radius = baseRadius;
@@ -76,7 +133,9 @@ function buildTorsoFromSpine(spineBones, radii = [], segments = 8, radiusProfile
       const cosTheta = Math.cos(theta);
       const sinTheta = Math.sin(theta);
 
-      const offset = normal.clone().multiplyScalar(cosTheta * radius)
+      const offset = normal
+        .clone()
+        .multiplyScalar(cosTheta * radius)
         .add(binormal.clone().multiplyScalar(sinTheta * radius));
 
       const vertexPosition = center.clone().add(offset);
@@ -87,15 +146,16 @@ function buildTorsoFromSpine(spineBones, radii = [], segments = 8, radiusProfile
       // Weight each ring to its corresponding spine bone. Blend slightly
       // toward the next bone so the torso deforms smoothly along the column.
       const boneIndexA = spineBones[ringIndex].boneIndex ?? 0;
-      const boneIndexB = spineBones[Math.min(ringIndex + 1, rings - 1)].boneIndex ?? boneIndexA;
+      const boneIndexB =
+        spineBones[Math.min(ringIndex + 1, rings - 1)].boneIndex ?? boneIndexA;
       const blend = rings > 1 ? ringIndex / (rings - 1) : 0;
       skinIndices.push(boneIndexA, boneIndexB, 0, 0);
       skinWeights.push(1 - blend, blend, 0, 0);
     }
   }
 
-  for (let i = 0; i < rings - 1; i++) {
-    for (let j = 0; j < segments; j++) {
+  for (let i = 0; i < rings - 1; i += 1) {
+    for (let j = 0; j < segments; j += 1) {
       const next = (j + 1) % segments;
       const a = i * segments + j;
       const b = i * segments + next;
@@ -105,10 +165,19 @@ function buildTorsoFromSpine(spineBones, radii = [], segments = 8, radiusProfile
     }
   }
 
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(vertices, 3)
+  );
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
-  geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+  geometry.setAttribute(
+    'skinIndex',
+    new THREE.Uint16BufferAttribute(skinIndices, 4)
+  );
+  geometry.setAttribute(
+    'skinWeight',
+    new THREE.Float32BufferAttribute(skinWeights, 4)
+  );
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
