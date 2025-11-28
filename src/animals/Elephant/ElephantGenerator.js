@@ -241,6 +241,7 @@ export class ElephantGenerator {
     // === 4. TRUNK (Prehensile) ===
     const trunkGeometry = generateTailGeometry(skeleton, {
       bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
+      rootBone: 'head',
       // A touch more sides in low-poly mode so faces aren’t crazy skinny
       sides: lowPoly ? Math.max(trunkSidesLowPoly, 12) : 24,
       // Slightly thicker and less extreme taper
