@@ -150,6 +150,16 @@ export class ElephantGenerator {
       radii: [0.95 * headScale, 1.4, 1.15, 0.9 * headScale],
       sides: 28,
       radiusProfile: torsoRadiusProfile,
+      extendRumpToRearLegs: {
+        bones: [
+          'back_left_upper',
+          'back_left_lower',
+          'back_left_foot',
+          'back_right_upper',
+          'back_right_lower',
+          'back_right_foot'
+        ]
+      },
       lowPoly,
       lowPolySegments: lowPoly ? lowPolyTorsoSegments : undefined,
       lowPolyWeldTolerance: lowPoly ? lowPolyTorsoWeldTolerance : 0
