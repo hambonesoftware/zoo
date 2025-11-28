@@ -239,7 +239,11 @@ export class ElephantGenerator {
     });
 
     // === 4. TRUNK (Prehensile) ===
-    const trunkRootBoneName = getBoneByName('trunk_root') ? 'trunk_root' : 'head';
+    const trunkRootBoneName = getBoneByName('trunk_anchor')
+      ? 'trunk_anchor'
+      : getBoneByName('trunk_root')
+        ? 'trunk_root'
+        : 'head';
     const trunkGeometry = generateTailGeometry(skeleton, {
       bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
       rootBone: trunkRootBoneName,
