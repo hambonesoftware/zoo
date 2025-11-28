@@ -21,6 +21,10 @@ import * as BufferGeometryUtils from '../../libs/BufferGeometryUtils.js';
  *       When true, add a triangle-fan cap at the first ring (rump).
  *   - capEnd: boolean
  *       When true, add a triangle-fan cap at the last ring (neck/front).
+ *   - extendRumpToRearLegs: boolean | { bones?: string[] }
+ *       When enabled, inserts an extra rump ring behind the hips so the torso
+ *       extends to cover the rear-most leg position. Accepts an optional list
+ *       of leg bone names to measure; defaults to common rear leg names.
  */
 export function generateTorsoGeometry(skeleton, options = {}) {
   const bones = options.bones || [];
@@ -49,6 +53,7 @@ export function generateTorsoGeometry(skeleton, options = {}) {
 
   const capStart = options.capStart === true;
   const capEnd = options.capEnd === true;
+  const extendRumpToRearLegs = options.extendRumpToRearLegs;
 
   const boneIndexMap = {};
   skeleton.bones.forEach((bone, idx) => {
@@ -69,9 +74,86 @@ export function generateTorsoGeometry(skeleton, options = {}) {
     };
   });
 
+  const hipRadius = (() => {
+    const shoulderRadius = radii[1] ?? radii[0] ?? 1.5;
+    return radii[0] ?? shoulderRadius;
+  })();
+
+  const shouldExtend =
+    extendRumpToRearLegs === true ||
+    (extendRumpToRearLegs && typeof extendRumpToRearLegs === 'object');
+
+  let spineForBuild = spine;
+  let radiiForBuild = radii.slice();
+
+  if (shouldExtend && spine.length >= 1) {
+    const rumpCenter = new THREE.Vector3(spine[0].x, spine[0].y, spine[0].z);
+    const nextCenter = spine[1]
+      ? new THREE.Vector3(spine[1].x, spine[1].y, spine[1].z)
+      : rumpCenter.clone().add(new THREE.Vector3(0, 0, 1));
+
+    const bodyForward = nextCenter.clone().sub(rumpCenter);
+    if (bodyForward.lengthSq() === 0) {
+      bodyForward.set(0, 0, 1);
+    }
+    bodyForward.normalize();
+    const bodyBack = bodyForward.clone().negate();
+
+    const rearLegBones = Array.isArray(extendRumpToRearLegs?.bones)
+      ? extendRumpToRearLegs.bones
+      : [
+          'back_left_upper',
+          'back_left_lower',
+          'back_left_foot',
+          'back_right_upper',
+          'back_right_lower',
+          'back_right_foot',
+          'rear_left_leg',
+          'rear_right_leg',
+          'hind_left_leg',
+          'hind_right_leg',
+          'back_left_leg',
+          'back_right_leg'
+        ];
+
+    let maxRearOffset = 0;
+    rearLegBones.forEach((name) => {
+      const legBone = skeleton.bones.find((b) => b.name === name);
+      if (!legBone) return;
+      const legPos = new THREE.Vector3().setFromMatrixPosition(
+        legBone.matrixWorld
+      );
+      const offset = legPos.clone().sub(rumpCenter).dot(bodyBack);
+      if (offset > maxRearOffset) {
+        maxRearOffset = offset;
+      }
+    });
+
+    if (maxRearOffset <= 0) {
+      maxRearOffset = Math.max(0, 0.5 * hipRadius);
+    }
+
+    const extraRumpCenter = rumpCenter.clone().add(
+      bodyBack.clone().multiplyScalar(maxRearOffset)
+    );
+
+    const rumpBoneIndex = spine[0].boneIndex ?? 0;
+    const extraRumpBone = {
+      x: extraRumpCenter.x,
+      y: extraRumpCenter.y,
+      z: extraRumpCenter.z,
+      boneIndex: rumpBoneIndex
+    };
+
+    spineForBuild = [extraRumpBone, ...spine];
+
+    const extraRadius = typeof radii[0] === 'number' ? radii[0] : hipRadius;
+    radiiForBuild = [extraRadius, ...radiiForBuild];
+  }
+
   const geometry = buildTorsoFromSpine(
-    spine,
-    radii,
+    spineForBuild,
+    radiiForBuild,
     sides,
     radiusProfile,
     {
