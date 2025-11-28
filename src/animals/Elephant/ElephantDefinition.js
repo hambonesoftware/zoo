@@ -9,8 +9,10 @@ export const ElephantDefinition = {
     { name: 'spine_mid',   parent: 'spine_base', position: [0, -0.1, 1.1] },
     // spine_neck = Shoulder hump.
     { name: 'spine_neck',  parent: 'spine_mid',  position: [0, 0.3, 0.9] },
-    // Head
-    { name: 'head',        parent: 'spine_neck', position: [0, -0.1, 0.7] },
+    // spine_head stretches forward to give the neck visible length.
+    { name: 'spine_head',  parent: 'spine_neck', position: [0, 0.1, 0.6] },
+    // Head anchored slightly forward from the neck tip.
+    { name: 'head',        parent: 'spine_head', position: [0, -0.15, 0.45] },
 
     // === Trunk (Chain) ===
     { name: 'trunk_base',  parent: 'head',        position: [0, -0.3, 0.6] },
@@ -72,6 +74,7 @@ export const ElephantDefinition = {
     spine_base:   [1.1, 1.1, 1.2], // Huge rump
     spine_mid:    [1.25, 1.35, 1.3], // Huge barrel chest
     spine_neck:   [1.0, 1.1, 1.0], // Thick neck base
+    spine_head:   [0.9, 0.95, 0.95], // Neck tip toward the head
     head:         [0.85, 0.95, 0.9], // Large skull
 
     trunk_base:   [0.45, 0.45, 0.45],
