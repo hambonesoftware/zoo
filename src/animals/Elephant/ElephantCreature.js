@@ -94,7 +94,7 @@ export class ElephantCreature extends THREE.Group {
       this.behavior.update(delta);
     }
     if (this.skeletonHelper) {
-      this.skeletonHelper.update();
+      this.skeletonHelper.updateMatrixWorld(true);
     }
   }
 }
