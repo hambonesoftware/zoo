@@ -13,12 +13,18 @@ export class GorillaCreature extends THREE.Group {
     this.skeleton = new THREE.Skeleton(this.bones);
 
     const rootBone = this.bones.find((b) => b.name === 'spine_base') || this.bones[0];
-    this.add(rootBone);
-    this.updateMatrixWorld(true);
+    // Prime the bone transforms before generating geometry so the skinned mesh
+    // binds to the same coordinate space as the skeleton.
+    rootBone.updateMatrixWorld(true);
 
     const { mesh, behavior } = GorillaGenerator.generate(this.skeleton, options);
     this.mesh = mesh;
     this.behavior = behavior;
+
+    // Keep the skeleton and mesh in the same transform hierarchy so scaling the
+    // creature also scales the debug skeleton helper.
+    this.mesh.add(rootBone);
+    this.mesh.bind(this.skeleton);
 
     this.add(mesh);
 
