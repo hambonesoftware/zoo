@@ -31,7 +31,10 @@ export class ElephantCreature extends THREE.Group {
 
     const { mesh, behavior } = ElephantGenerator.generate(
       this.skeleton,
-      generatorOptions
+      {
+        debugVolumes: true,
+        ...generatorOptions
+      }
     );
     this.mesh = mesh;
     this.behavior = behavior; // Behaviour drives idle motions, etc.

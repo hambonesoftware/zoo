@@ -21,6 +21,7 @@ export class ElephantGenerator {
     // Global style flags
     // ------------------------------------------------------------
     const lowPoly = options.lowPoly === true;
+    const debugVolumes = options.debugVolumes !== false;
 
     // Optional torso-specific low-poly controls
     const lowPolyTorsoSegments =
@@ -107,6 +108,17 @@ export class ElephantGenerator {
     // Helper to get a bone by name.
     const getBoneByName = (name) =>
       skeleton.bones.find((b) => b.name === name) || null;
+
+    const formatVector = (vec) =>
+      `(${vec.x.toFixed(3)}, ${vec.y.toFixed(3)}, ${vec.z.toFixed(3)})`;
+
+    const sampleBonePosition = (name) => {
+      const bone = getBoneByName(name);
+      if (!bone) {
+        return null;
+      }
+      return new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld);
+    };
 
     // Helper to build a pivot-based transform matrix for ears.
     // We:
@@ -244,6 +256,99 @@ export class ElephantGenerator {
       maxTrunkRadius,
       maxTrunkRadiusByHead
     );
+
+    if (debugVolumes) {
+      const trackedBones = [
+        'head',
+        'head_tip',
+        'trunk_anchor',
+        'trunk_root',
+        'trunk_base',
+        'trunk_mid1',
+        'trunk_mid2',
+        'trunk_tip'
+      ];
+      const positions = trackedBones.reduce((acc, name) => {
+        const pos = sampleBonePosition(name);
+        if (pos) {
+          acc[name] = pos;
+        }
+        return acc;
+      }, {});
+
+      const headCenter = positions.head || positions.head_tip || null;
+      const headSphereRadius = headRadius;
+
+      console.log('[ElephantGenerator][debugVolumes] --- Elephant head/trunk setup ---');
+      console.log(
+        '[ElephantGenerator][debugVolumes] tuskSeparation:',
+        tuskSeparation.toFixed(3)
+      );
+      console.log(
+        '[ElephantGenerator][debugVolumes] head sphere radius:',
+        headSphereRadius.toFixed(3)
+      );
+      console.log(
+        '[ElephantGenerator][debugVolumes] trunk radii (base/mid/tip):',
+        trunkBaseRadius.toFixed(3),
+        trunkMidRadius.toFixed(3),
+        trunkTipRadius.toFixed(3)
+      );
+
+      trackedBones.forEach((name) => {
+        if (positions[name]) {
+          console.log(
+            `[ElephantGenerator][debugVolumes] bone ${name} @`,
+            formatVector(positions[name])
+          );
+        } else {
+          console.log(
+            `[ElephantGenerator][debugVolumes] bone ${name} missing from skeleton`
+          );
+        }
+      });
+
+      if (headCenter) {
+        const headSphereMsg =
+          '[ElephantGenerator][debugVolumes] head sphere center @ ' +
+          formatVector(headCenter);
+        console.log(headSphereMsg);
+
+        const trunkParts = [
+          'trunk_anchor',
+          'trunk_root',
+          'trunk_base',
+          'trunk_mid1',
+          'trunk_mid2',
+          'trunk_tip'
+        ];
+
+        trunkParts.forEach((name) => {
+          if (!positions[name]) {
+            return;
+          }
+          const dist = positions[name].distanceTo(headCenter);
+          const inside = dist < headSphereRadius;
+          if (inside) {
+            console.log(
+              `[ElephantGenerator][debugVolumes] WARNING: ${name} is inside head volume (dist ${dist.toFixed(
+                3
+              )} < radius ${headSphereRadius.toFixed(3)})`
+            );
+          } else {
+            console.log(
+              `[ElephantGenerator][debugVolumes] ${name} clear of head volume (dist ${dist.toFixed(
+                3
+              )} >= radius ${headSphereRadius.toFixed(3)})`
+            );
+          }
+        });
+      } else {
+        console.log(
+          '[ElephantGenerator][debugVolumes] Skipping head overlap checks; head bone not found.'
+        );
+      }
+    }
 
     // === 3. HEAD ===
     const headGeometry = generateHeadGeometry(skeleton, {
