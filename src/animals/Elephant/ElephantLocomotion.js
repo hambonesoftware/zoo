@@ -18,7 +18,7 @@ import * as THREE from 'three';
  * - 'leg_front_R_upper', 'leg_front_R_lower'
  * - 'leg_back_L_upper', 'leg_back_L_lower'
  * - 'leg_back_R_upper', 'leg_back_R_lower'
- * - 'trunk_base', 'trunk_mid', 'trunk_tip'
+ * - 'trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'
  * - 'ear_left', 'ear_right'
  * - 'tail_base', 'tail_mid', 'tail_tip'
  */
@@ -257,7 +257,8 @@ export class ElephantLocomotion {
   applySecondaryMotion(dt, bones) {
     const TWO_PI = Math.PI * 2;
     const trunkBase = bones['trunk_base'];
-    const trunkMid = bones['trunk_mid'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
     const trunkTip = bones['trunk_tip'];
     const earLeft = bones['ear_left'];
     const earRight = bones['ear_right'];
@@ -285,9 +286,10 @@ export class ElephantLocomotion {
       s.velocity += acc * dt;
       s.angle += s.velocity * dt;
 
-      if (trunkBase) trunkBase.rotation.x += s.angle * 0.40;
-      if (trunkMid) trunkMid.rotation.x += s.angle * 0.65;
-      if (trunkTip) trunkTip.rotation.x += s.angle * 0.85;
+      if (trunkBase) trunkBase.rotation.x += s.angle * 0.12;
+      if (trunkMid1) trunkMid1.rotation.x += s.angle * 0.45;
+      if (trunkMid2) trunkMid2.rotation.x += s.angle * 0.75;
+      if (trunkTip) trunkTip.rotation.x += s.angle * 1.0;
     }
 
     // --- Ears spring ---
@@ -380,23 +382,28 @@ export class ElephantLocomotion {
    */
   applyTrunkIdle(bones, t) {
     const trunkBase = bones['trunk_base'];
-    const trunkMid = bones['trunk_mid'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
     const trunkTip = bones['trunk_tip'];
 
     const sway = Math.sin(t * 0.8) * 0.2;
     const dip  = Math.sin(t * 0.6) * 0.15;
 
     if (trunkBase) {
-      trunkBase.rotation.y = sway * 0.5;
-      trunkBase.rotation.x = dip * 0.6;
+      trunkBase.rotation.y = sway * 0.35;
+      trunkBase.rotation.x = dip * 0.45;
     }
-    if (trunkMid) {
-      trunkMid.rotation.y = sway * 0.7;
-      trunkMid.rotation.x = dip * 0.8;
+    if (trunkMid1) {
+      trunkMid1.rotation.y = sway * 0.6;
+      trunkMid1.rotation.x = dip * 0.65;
+    }
+    if (trunkMid2) {
+      trunkMid2.rotation.y = sway * 0.8;
+      trunkMid2.rotation.x = dip * 0.85;
     }
     if (trunkTip) {
-      trunkTip.rotation.y = sway * 0.9;
-      trunkTip.rotation.x = dip * 1.0;
+      trunkTip.rotation.y = sway * 1.0;
+      trunkTip.rotation.x = dip * 1.05;
     }
   }
 
@@ -510,23 +517,28 @@ export class ElephantLocomotion {
    */
   applyTrunkWalk(bones, t, phase) {
     const trunkBase = bones['trunk_base'];
-    const trunkMid = bones['trunk_mid'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
     const trunkTip = bones['trunk_tip'];
 
     const sway = Math.sin(t * 1.5) * 0.4 + Math.sin(phase * Math.PI * 2) * 0.3;
     const dip  = Math.sin(t * 1.2 + 1.0) * 0.3;
 
     if (trunkBase) {
-      trunkBase.rotation.y = sway * 0.8;
-      trunkBase.rotation.x = dip * 0.4;
+      trunkBase.rotation.y = sway * 0.55;
+      trunkBase.rotation.x = dip * 0.35;
     }
-    if (trunkMid) {
-      trunkMid.rotation.y = sway * 0.6;
-      trunkMid.rotation.x = dip * 0.8;
+    if (trunkMid1) {
+      trunkMid1.rotation.y = sway * 0.7;
+      trunkMid1.rotation.x = dip * 0.65;
+    }
+    if (trunkMid2) {
+      trunkMid2.rotation.y = sway * 0.65;
+      trunkMid2.rotation.x = dip * 0.9;
     }
     if (trunkTip) {
-      trunkTip.rotation.y = sway * 0.5;
-      trunkTip.rotation.x = dip * 1.0;
+      trunkTip.rotation.y = sway * 0.55;
+      trunkTip.rotation.x = dip * 1.1;
     }
   }
 
