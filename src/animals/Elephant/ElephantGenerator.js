@@ -201,6 +201,36 @@ export class ElephantGenerator {
       capBase: true
     });
 
+    // === Trunk/Tusk spatial relationship ===
+    const tuskLeft = getBoneByName('tusk_left');
+    const tuskRight = getBoneByName('tusk_right');
+
+    // Default to the rigged separation if tusk bones are missing
+    let tuskSeparation = 0.6;
+    if (tuskLeft && tuskRight) {
+      const leftPos = new THREE.Vector3().setFromMatrixPosition(
+        tuskLeft.matrixWorld
+      );
+      const rightPos = new THREE.Vector3().setFromMatrixPosition(
+        tuskRight.matrixWorld
+      );
+      tuskSeparation = leftPos.distanceTo(rightPos);
+    }
+
+    // Limit trunk diameter to 80% of tusk separation
+    const maxTrunkRadius = (tuskSeparation * 0.8) * 0.5;
+
+    const defaultTrunkBaseRadius = 0.52;
+    const defaultTrunkMidRadius =
+      typeof options.trunkMidRadius === 'number'
+        ? options.trunkMidRadius
+        : 0.07;
+    const defaultTrunkTipRadius = 0.26;
+
+    const trunkBaseRadius = Math.min(defaultTrunkBaseRadius, maxTrunkRadius);
+    const trunkMidRadius = Math.min(defaultTrunkMidRadius, maxTrunkRadius);
+    const trunkTipRadius = Math.min(defaultTrunkTipRadius, maxTrunkRadius);
+
     // === 3. HEAD ===
     const headGeometry = generateHeadGeometry(skeleton, {
       parentBone: 'head',
@@ -214,8 +244,9 @@ export class ElephantGenerator {
       // A touch more sides in low-poly mode so faces aren’t crazy skinny
       sides: lowPoly ? Math.max(trunkSidesLowPoly, 12) : 24,
       // Slightly thicker and less extreme taper
-      baseRadius: 0.52,
-      tipRadius: 0.26
+      baseRadius: trunkBaseRadius,
+      midRadius: trunkMidRadius,
+      tipRadius: trunkTipRadius
     });
 
     // === 5. TUSKS (Start -> Tip) ===
