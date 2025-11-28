@@ -406,8 +406,8 @@ function buildTorsoFromSpine(
 
     for (let j = 0; j < segments; j += 1) {
       const a = startCapIndex;
-      const b = firstRingStart + j;
-      const c = firstRingStart + ((j + 1) % segments);
+      const b = firstRingStart + ((j + 1) % segments);
+      const c = firstRingStart + j;
       indices.push(a, b, c);
     }
   }
