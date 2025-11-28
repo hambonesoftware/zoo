@@ -13,6 +13,7 @@ import { bridgeRings, buildBufferGeometry } from '../../utils/GeometryBuilder.js
  */
 export function generateTailGeometry(skeleton, options = {}) {
   const tailBoneNames = options.bones || ['tail_base', 'tail_mid', 'tail_tip'];
+  const rootBoneName = options.rootBone || 'spine_base';
   const sides = typeof options.sides === 'number' ? options.sides : 6;
   const baseRadius = options.baseRadius || 0.08;
   const midRadius  = options.midRadius  || 0.07;
@@ -28,7 +29,7 @@ export function generateTailGeometry(skeleton, options = {}) {
   });
   skeleton.bones.forEach((bone) => bone.updateMatrixWorld(true));
 
-  const allTailBoneNames = ['spine_base', ...tailBoneNames];
+  const allTailBoneNames = [rootBoneName, ...tailBoneNames];
   const tailPoints = allTailBoneNames.map((name) => {
     const idx = boneIndexMap[name];
     if (idx === undefined) {
