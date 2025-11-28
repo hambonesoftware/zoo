@@ -36,7 +36,7 @@ function baseTorsoRadius(s, headScale) {
 
 // Attachment definitions in (s, theta) space for the elephant.
 // Coordinate assumptions for the local ring frame:
-//   s    : 0 = rump, 1 = head along the spine
+//   s    : 0 = hips, 1 = head along the spine
 //   theta: 0      → +X (elephant's right side)
 //          π / 2  → +Y (top / back)
 //          π      → -X (elephant's left side)
@@ -44,7 +44,7 @@ function baseTorsoRadius(s, headScale) {
 const ATTACHMENTS = [
   {
     name: 'neck_hump',
-    s: 0.22,
+    s: 0.18,
     theta: Math.PI / 2,
     bumpRadius: 0.18,
     sFalloff: 0.25,
@@ -52,7 +52,7 @@ const ATTACHMENTS = [
   },
   {
     name: 'front_left_leg',
-    s: 0.38,
+    s: 0.32,
     theta: 2.2,
     bumpRadius: 0.14,
     sFalloff: 0.2,
@@ -60,7 +60,7 @@ const ATTACHMENTS = [
   },
   {
     name: 'front_right_leg',
-    s: 0.38,
+    s: 0.32,
     theta: -0.6,
     bumpRadius: 0.14,
     sFalloff: 0.2,
@@ -68,7 +68,7 @@ const ATTACHMENTS = [
   },
   {
     name: 'rear_left_leg',
-    s: 0.68,
+    s: 0.8,
     theta: 2.4,
     bumpRadius: 0.16,
     sFalloff: 0.22,
@@ -76,7 +76,7 @@ const ATTACHMENTS = [
   },
   {
     name: 'rear_right_leg',
-    s: 0.68,
+    s: 0.8,
     theta: -0.4,
     bumpRadius: 0.16,
     sFalloff: 0.22,
