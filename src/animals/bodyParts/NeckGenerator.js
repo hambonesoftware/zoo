@@ -6,6 +6,7 @@ import { createRing, bridgeRings, buildBufferGeometry } from '../../utils/Geomet
 export function generateNeckGeometry(skeleton, options = {}) {
   const sides = options.sides || 8;
   const yOffset = options.yOffset || 0;
+  const capBase = options.capBase !== false; // default: add base cap
   const neckChain =
     Array.isArray(options.bones) && options.bones.length > 0
       ? options.bones
@@ -41,6 +42,7 @@ export function generateNeckGeometry(skeleton, options = {}) {
   const uvs = [];
   const indices = [];
   const ringStarts = [];
+  const ringAxes = [];
 
   for (let i = 0; i < neckPoints.length; i++) {
     const center = neckPoints[i];
@@ -48,6 +50,7 @@ export function generateNeckGeometry(skeleton, options = {}) {
     const next = (i === neckPoints.length - 1) ? neckPoints[i] : neckPoints[i + 1];
     let axis = next.clone().sub(prev).normalize();
     if (axis.lengthSq() < 1e-6) axis = new THREE.Vector3(0, 1, 0);
+    ringAxes.push(axis.clone());
     const up = Math.abs(axis.y) > 0.99 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
     
     // Use imported createRing
@@ -79,6 +82,25 @@ export function generateNeckGeometry(skeleton, options = {}) {
 
   for (let seg = 0; seg < neckPoints.length - 1; seg++) {
     bridgeRings(ringStarts[seg], ringStarts[seg + 1], sides, indices);
+  }
+
+  if (capBase) {
+    const baseStart = ringStarts[0];
+    const baseAxis = ringAxes[0] ? ringAxes[0].clone() : new THREE.Vector3(0, 1, 0);
+    const baseNormal = baseAxis.negate();
+    const baseCenter = neckPoints[0].clone();
+    baseCenter.y += yOffset;
+    positions.push(baseCenter.x, baseCenter.y, baseCenter.z);
+    normals.push(baseNormal.x, baseNormal.y, baseNormal.z);
+    uvs.push(0.5, 0);
+    skinIndices.push(boneIndexMap[neckChain[0]], boneIndexMap[neckChain[0]], 0, 0);
+    skinWeights.push(1, 0, 0, 0);
+    const baseCenterIdx = positions.length / 3 - 1;
+    for (let j = 0; j < sides; j++) {
+      const a = baseStart + j;
+      const b = baseStart + ((j + 1) % sides);
+      indices.push(baseCenterIdx, b, a);
+    }
   }
 
   const rimStartIdx = ringStarts[ringStarts.length - 1];
