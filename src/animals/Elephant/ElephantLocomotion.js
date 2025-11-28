@@ -14,98 +14,88 @@ import * as THREE from 'three';
  * Expected bone keys (any missing ones are safely ignored):
  * - 'spine_base' (root / hips)
  * - 'spine_mid', 'spine_neck', 'head'
- * - 'front_left_upper_leg', 'front_left_lower_leg'
- * - 'front_right_upper_leg', 'front_right_lower_leg'
- * - 'back_left_upper_leg',  'back_left_lower_leg'
- * - 'back_right_upper_leg', 'back_right_lower_leg'
+ * - 'leg_front_L_upper', 'leg_front_L_lower'
+ * - 'leg_front_R_upper', 'leg_front_R_lower'
+ * - 'leg_back_L_upper', 'leg_back_L_lower'
+ * - 'leg_back_R_upper', 'leg_back_R_lower'
  * - 'trunk_base', 'trunk_mid', 'trunk_tip'
  * - 'ear_left', 'ear_right'
+ * - 'tail_base', 'tail_mid', 'tail_tip'
  */
 export class ElephantLocomotion {
   constructor(elephant) {
-    this.elephant = elephant;
+    this.elephant = elephant;    
 
-    // Finite state machine: idle, wander, curious.  Start in idle.
-    this.state = 'idle';
-    // A timer controlling when to switch states.  When it reaches 0 the
-    // locomotion logic will decide the next state.
-    this._stateTimer = 0;
-    // Time elapsed in the current state (used for curious animation)
-    this._stateTime = 0;
+    // Finite state machine for high-level motion: idle, walking, curiosity, etc.
+    this.state = 'idle';   // 'idle' | 'walk' | 'curious' | 'wander'
 
-    // --- LOCOMOTION CONFIG ---
-    this.baseHeight = 0.45;         // Base Y for spine_base above "ground"
-    this.walkSpeed = 0.5;           // Units per second (default)
-    this.wanderSpeed = 0.35;        // Units per second during wander
-    this.turnSpeed = 0.4;           // Radians per second (slow turning)
-    this.gaitDuration = 1.1;        // Seconds per full gait cycle (heavier pace)
-    this.gaitPhase = 0;             // 0..2π
+    // Walk cycle phase: 0..1 (or 0..2π in radians) for the stepping pattern
+    this.gaitPhase = 0;
 
-    this.worldBoundsRadius = 5.0;   // How far from origin before turning back
-    this.idleTimer = 1.2;           // Legacy idle timer (not used in FSM)
+    // Base speed. Over time we can tween this for acceleration/deceleration
+    this.walkSpeed = 0.6; // world units per second (adjust to taste)
 
-    // Forward direction in XZ plane
+    // Base height offset for the root (hips). Elephant body is big/heavy;
+    // we keep it fairly low and bob it gently up and down while walking.
+    this.baseHeight = 1.0;
+
+    // Timer for idle breathing / subtle motion
+    this._idleTime = 0;
+
+    // Simple 'wander' heading these elephants walk in, if desired
     this.direction = new THREE.Vector3(0, 0, 1);
+
+    // Reusable temp vector
     this.tempVec = new THREE.Vector3();
 
     // Internal timers
-    this._idleTime = 0;
+    this._stateTime = 0;
 
-    // Scratch quaternion
-    this.tempQuat = new THREE.Quaternion();
+    // For transitional soft-start / soft-stop of walking
+    this.walkBlend = 0; // 0=not walking, 1=fully walking
 
-    // Secondary motion spring states for trunk, ears and tail
+    // Curiosity: how much the elephant is sniffing around
+    this.curiousBlend = 0;
+
+    // Secondary motion springs for trunk/ears/tail
     this._spring = {
       trunk: { angle: 0, velocity: 0 },
-      ears: { angle: 0, velocity: 0 },
-      tail: { angle: 0, velocity: 0 }
+      ears:  { angle: 0, velocity: 0 },
+      tail:  { angle: 0, velocity: 0 }
     };
   }
 
   /**
-   * Main update entry. Call once per frame with delta time in seconds.
+   * Main update entry. Call once per frame with dt (seconds).
    */
   update(dt) {
+    if (!this.elephant || !this.elephant.bones) return;
+
     const bones = this.elephant.bones;
     const root = bones['spine_base'];
     const mesh = this.elephant.mesh;
 
-    if (!bones || !root || !mesh) return;
-    // Update state timers
-    this._stateTime += dt;
-    this._stateTimer -= dt;
+    if (!root || !mesh) return;
 
-    // When the state timer expires choose a new state.  Idle mostly,
-    // occasionally wander or curious.  After a wander or curious
-    // sequence we always return to idle to avoid endless loops.
-    if (this._stateTimer <= 0) {
-      if (this.state === 'idle') {
-        const r = Math.random();
-        if (r < 0.65) {
-          // remain idle for another interval
-          this.state = 'idle';
-          this._stateTimer = 4 + Math.random() * 3; // 4–7s
-        } else if (r < 0.9) {
-          // wander
-          this.state = 'wander';
-          this._stateTimer = 5 + Math.random() * 4; // 5–9s
-        } else {
-          // curious
-          this.state = 'curious';
-          this._stateTimer = 3 + Math.random() * 2; // 3–5s
-        }
-      } else {
-        // After wander or curious always return to idle
-        this.state = 'idle';
-        this._stateTimer = 4 + Math.random() * 3;
-      }
-      // Reset state time counter when switching states
-      this._stateTime = 0;
-      // Notify parent behaviour (optional)
-      if (this.elephant.setState) this.elephant.setState(this.state);
+    // Advance time
+    this._idleTime += dt;
+    this._stateTime += dt;
+
+    // Lerp walkBlend toward 1 if walking, otherwise toward 0
+    const walkTarget = (this.state === 'walk' || this.state === 'wander') ? 1 : 0;
+    this.walkBlend = THREE.MathUtils.damp(this.walkBlend, walkTarget, 2.5, dt);
+
+    // Lerp curiosity blend similarly (for 'curious' state)
+    const curiousTarget = (this.state === 'curious') ? 1 : 0;
+    this.curiousBlend = THREE.MathUtils.damp(this.curiousBlend, curiousTarget, 2.0, dt);
+
+    // Gait phase: only advance when walking/wandering
+    if (this.walkBlend > 0.001) {
+      const phaseSpeed = this.walkSpeed * 1.3; // scales stepping frequency
+      this.gaitPhase = (this.gaitPhase + dt * phaseSpeed) % 1.0;
     }
 
-    // Dispatch update based on current state
+    // Apply the correct locomotion behavior for each state
     switch (this.state) {
       case 'wander':
         this.updateWander(dt, root, mesh, bones);
@@ -113,321 +103,71 @@ export class ElephantLocomotion {
       case 'curious':
         this.updateCurious(dt, root, bones);
         break;
+      case 'walk':
+        this.updateWalk(dt, root, mesh, bones);
+        break;
       case 'idle':
       default:
         this.updateIdle(dt, root, bones);
         break;
     }
 
-    // Apply secondary motion springs to trunk, ears and tail
+    // Apply simple secondary motion springs to trunk/ears/tail
     this.applySecondaryMotion(dt, bones);
   }
 
-  // -----------------------------
-  // IDLE STATE
-  // -----------------------------
-  updateIdle(dt, root, bones) {
-    this._idleTime += dt;
-    // Breathing: slow up/down motion of body.  The amplitude is
-    // increased slightly and phase offset by a small random value to
-    // avoid repetition.
-    const breathe = Math.sin(this._idleTime * 1.0 + 0.3) * 0.025;
-    // Occasional tiny weight shifts left/right using a slow sine
-    const sway = Math.sin(this._idleTime * 0.3) * 0.02;
-    root.position.set(sway, this.baseHeight + breathe, 0);
-
-    // Head: very slight sway & nod
-    const head = bones['head'];
-    const spineNeck = bones['spine_neck'];
-    const spineMid = bones['spine_mid'];
-
-    if (spineMid) {
-      spineMid.rotation.x = 0.03 * Math.sin(this._idleTime * 0.7);
-      spineMid.rotation.z = 0.02 * Math.sin(this._idleTime * 0.5);
-    }
-
-    if (spineNeck) {
-      spineNeck.rotation.x = 0.05 + 0.03 * Math.sin(this._idleTime * 0.8);
-      spineNeck.rotation.y = 0.05 * Math.sin(this._idleTime * 0.6);
-    }
-
-    if (head) {
-      head.rotation.x = -0.15 + 0.05 * Math.sin(this._idleTime * 0.9);
-      head.rotation.y = 0.05 * Math.sin(this._idleTime * 0.7);
-    }
-
-    // Idle trunk and ear motion is handled by secondary springs; remove explicit calls.
+  /**
+   * Set locomotion state externally, e.g. 'idle' or 'walk'.
+   */
+  setState(newState) {
+    if (newState === this.state) return;
+    this.state = newState;
+    // Reset state timers or blends if necessary
+    this._stateTime = 0;
   }
 
   /**
-   * Wander state: the elephant ambles slowly around the pen.  We reuse
-   * the existing walking implementation but substitute the wander
-   * speed for the usual walk speed.
+   * @returns {string} current locomotion state
+   */
+  getState() {
+    return this.state;
+  }
+
+  // -----------------------------
+  // WANDER STATE
+  // -----------------------------
+
+  /**
+   * Wander: the elephant ambles steadily in its current direction, slowly
+   * turning over time with some noise. Legs follow a gait; trunk & ears sway.
    */
   updateWander(dt, root, mesh, bones) {
-    // Temporarily override walkSpeed while wandering
-    const prevSpeed = this.walkSpeed;
-    this.walkSpeed = this.wanderSpeed;
-    // Use existing walking logic
-    this.updateWalk(dt, root, mesh, bones);
-    // Restore original walking speed
-    this.walkSpeed = prevSpeed;
-  }
+    // Basic wandering logic: gently rotate direction vector over time
+    const turnSpeed = 0.4; // rad/s for wandering
+    const noise = (Math.random() - 0.5) * 0.3; // some randomness
+    const turnAngle = turnSpeed * dt * noise;
+    this.rotateDirection(turnAngle);
 
-  /**
-   * Curious state: the elephant pauses and raises its head and trunk as
-   * if inspecting something.  No forward movement takes place.
-   */
-  updateCurious(dt, root, bones) {
-	  // Keep the body stationary at base height
-	  root.position.set(0, this.baseHeight, 0);
-	  // Slow idle sway of the body
-	  root.rotation.z = 0.02 * Math.sin(this._stateTime * 1.5);
+    // Move root along direction
+    const forwardSpeed = this.walkSpeed * 0.7;
+    this.tempVec.copy(this.direction).multiplyScalar(forwardSpeed * dt);
+    root.position.add(this.tempVec);
 
-	  const spineNeck = bones['spine_neck'];
-	  const head      = bones['head'];
-	  const trunkBase = bones['trunk_base'];
-	  const trunkMid1 = bones['trunk_mid1'];
-	  const trunkMid2 = bones['trunk_mid2'];
-	  const trunkTip  = bones['trunk_tip'];
+    // Body bobbing
+    const time = this._idleTime * 1.4;
+    const bob = Math.sin((time + this.gaitPhase * Math.PI * 2) * 2.0) * 0.05;
+    root.position.y = this.baseHeight + bob;
 
-	  // Raise the head and look around gently
-	  if (spineNeck) {
-		spineNeck.rotation.x = 0.1 + 0.05 * Math.sin(this._stateTime * 2.0);
-		spineNeck.rotation.y = 0.1 * Math.sin(this._stateTime * 1.0);
-	  }
-	  if (head) {
-		head.rotation.x = -0.05 + 0.07 * Math.sin(this._stateTime * 2.5);
-		head.rotation.y = 0.08 * Math.sin(this._stateTime * 1.7);
-	  }
+    // Lean slightly into gait
+    const leanForward = Math.sin(this.gaitPhase * Math.PI * 2) * 0.05;
+    const leanSide = Math.sin(this.gaitPhase * Math.PI * 4) * 0.03;
+    root.rotation.x = leanForward;
+    root.rotation.z = leanSide;
 
-	  // Lift the trunk in a smooth S-curve; base moves least, tip most
-	  const lift = 0.3 + 0.1 * Math.sin(this._stateTime * 2.2);
+    // Apply walk pose for legs
+    this.applyLegWalk(bones, this.gaitPhase);
 
-	  if (trunkBase) {
-		trunkBase.rotation.x = -lift * 0.4;
-		trunkBase.rotation.y = -math.PI/4;
-	  }
-	  if (trunkMid1) {
-		trunkMid1.rotation.x = -lift * 0.7;
-		trunkMid1.rotation.y = -math.PI/4;
-	  }
-	  if (trunkMid2) {
-		trunkMid2.rotation.x = -lift * 0.9;
-		trunkMid2.rotation.y = -math.PI/4;
-	  }
-	  if (trunkTip) {
-		trunkTip.rotation.x = -lift;
-		trunkTip.rotation.y = -math.PI/4;
-	  }
-
-	  // Ears flick slightly during curiosity
-	  const earLeft  = bones['ear_left'];
-	  const earRight = bones['ear_right'];
-	  const flap = 0.15 * Math.sin(this._stateTime * 3.0);
-	  if (earLeft)  earLeft.rotation.z = flap;
-	  if (earRight) earRight.rotation.z = -flap;
-	}
-
-
-
-  /**
-   * Apply damped spring secondary motion to the trunk, ears and tail.
-   * This introduces a lagging motion that follows the elephant's
-   * forward velocity and turning rate.  The springs integrate simple
-   * physics each frame: acceleration is proportional to the difference
-   * between the target and current angle minus a damping term.
-   */
-    /**
-   * Apply damped spring secondary motion to the trunk, ears and tail.
-   * This introduces a lagging motion that follows the elephant's
-   * forward velocity and turning rate. The springs integrate simple
-   * physics each frame: acceleration is proportional to the difference
-   * between the target and current angle minus a damping term.
-   */
-  applySecondaryMotion(dt, bones) {
-    // Determine the desired amplitude based on current state.  When
-    // wandering we use the wanderSpeed; otherwise the target speed is 0
-    const speed = this.state === 'wander' ? this.wanderSpeed : 0;
-    // Target swing / bulge scales with speed
-    const trunkTarget = speed * 0.4;
-    const earsTarget  = speed * 0.3;
-    const tailTarget  = speed * 0.5;
-    // Spring constants
-    const stiffness = 10.0;
-    const damping = 5.0;
-
-    // --- Trunk spring (thickness / breathing, not twist) ---
-    {
-      const s = this._spring.trunk;
-      const acc = (trunkTarget - s.angle) * stiffness - s.velocity * damping;
-      s.velocity += acc * dt;
-      s.angle += s.velocity * dt;
-
-      // Clamp the bulge so we never squash the trunk too much.
-      const maxBulge = 0.08;
-      const bulge = THREE.MathUtils.clamp(s.angle, -maxBulge, maxBulge);
-
-      // 1.0 = rest thickness, >1 = thicker, <1 = thinner
-      const baseScale = 1.0;
-      const baseXZ = baseScale + bulge;         // strongest near the head
-      const midXZ  = baseScale + bulge * 0.75;  // medium through the mid
-      const tipXZ  = baseScale + bulge * 0.5;   // weakest at the tip
-
-      const trunkBase = bones['trunk_base'];
-      const trunkMid1 = bones['trunk_mid1'] || bones['trunk_mid'];
-      const trunkMid2 = bones['trunk_mid2'];
-      const trunkTip  = bones['trunk_tip'];
-
-      if (trunkBase) {
-        trunkBase.scale.x = baseXZ;
-        trunkBase.scale.z = baseXZ;
-      }
-      if (trunkMid1) {
-        trunkMid1.scale.x = midXZ;
-        trunkMid1.scale.z = midXZ;
-      }
-      if (trunkMid2) {
-        trunkMid2.scale.x = midXZ;
-        trunkMid2.scale.z = midXZ;
-      }
-      if (trunkTip) {
-        trunkTip.scale.x = tipXZ;
-        trunkTip.scale.z = tipXZ;
-      }
-    }
-
-    // --- Ears spring ---
-    {
-      const s = this._spring.ears;
-      const acc = (earsTarget - s.angle) * stiffness - s.velocity * damping;
-      s.velocity += acc * dt;
-      s.angle += s.velocity * dt;
-      // Apply symmetrical ear swing around Z axis
-      const earLeft = bones['ear_left'];
-      const earRight = bones['ear_right'];
-      if (earLeft) earLeft.rotation.z += s.angle;
-      if (earRight) earRight.rotation.z -= s.angle;
-    }
-
-    // --- Tail spring ---
-    {
-      const s = this._spring.tail;
-      const acc = (tailTarget - s.angle) * stiffness - s.velocity * damping;
-      s.velocity += acc * dt;
-      s.angle += s.velocity * dt;
-      const tailBase = bones['tail_base'];
-      const tailMid  = bones['tail_mid'];
-      const tailTip  = bones['tail_tip'];
-      if (tailBase) tailBase.rotation.y += s.angle * 0.6;
-      if (tailMid)  tailMid.rotation.y  += s.angle * 0.4;
-      if (tailTip)  tailTip.rotation.y  += s.angle * 0.2;
-    }
-  }
-
-
-  applyTrunkWalk(bones, t, phase) {
-	  const trunkBase = bones['trunk_base'];
-	  const trunkMid1 = bones['trunk_mid1'];
-	  const trunkMid2 = bones['trunk_mid2'];
-	  const trunkTip  = bones['trunk_tip'];
-
-	  if (!trunkBase && !trunkMid1 && !trunkMid2 && !trunkTip) return;
-
-	  // Walking adds a rhythmic trunk swing synchronized with gait
-	  const gaitSway = Math.sin(phase) * 0.25;      // left/right
-	  const gaitDip  = Math.sin(phase * 2.0) * 0.1; // up/down
-
-	  // Idle baseline sway layered in for organic motion
-	  const idleSway = Math.sin(t * 0.6) * 0.08;
-	  const idleDip  = Math.sin(t * 0.8) * 0.05;
-
-	  const sway = gaitSway + idleSway;
-	  const dip  = gaitDip + idleDip;
-
-	  // Base stays fairly straight; motion grows toward the tip
-	  if (trunkBase) {
-		trunkBase.rotation.y = sway * 0.15;
-		trunkBase.rotation.x = dip * 0.3;
-	  }
-	  if (trunkMid1) {
-		trunkMid1.rotation.y = sway * 0.35;
-		trunkMid1.rotation.x = dip * 0.6;
-	  }
-	  if (trunkMid2) {
-		trunkMid2.rotation.y = sway * 0.5;
-		trunkMid2.rotation.x = dip * 0.85;
-	  }
-	  if (trunkTip) {
-		trunkTip.rotation.y = sway * 0.65;
-		trunkTip.rotation.x = dip * 1.0;
-	  }
-	}
-
-
-  applyEarIdle(bones, t) {
-    const earLeft = bones['ear_left'];
-    const earRight = bones['ear_right'];
-    if (!earLeft && !earRight) return;
-
-    // Build a slow base motion
-    const baseFlap = Math.sin(t * 0.7) * 0.1;
-    // Occasionally trigger a stronger flap
-    const pulse = Math.max(0, Math.sin(t * 0.3)) ** 2; // 0..1
-    const strongFlap = pulse * 0.25;
-
-    const totalFlapLeft = baseFlap + strongFlap;
-    const totalFlapRight = baseFlap + strongFlap * 0.9; // slight asymmetry
-
-    if (earLeft) {
-      // Rotate around local Z or X depending on your rig; here use Z
-      earLeft.rotation.z = totalFlapLeft;
-    }
-    if (earRight) {
-      earRight.rotation.z = -totalFlapRight;
-    }
-  }
-
-  // -----------------------------
-  // WALK STATE
-  // -----------------------------
-  updateWalk(dt, root, mesh, bones) {
-    // Advance local walk time
-    this._idleTime += dt; // reuse same clock for trunk/ears
-
-    // Advance gait phase (0..2π)
-    const TWO_PI = Math.PI * 2;
-    this.gaitPhase = (this.gaitPhase + (dt / this.gaitDuration) * TWO_PI) % TWO_PI;
-
-    // Wander logic: steer gently back toward origin if too far
-    const distFromOrigin = Math.sqrt(mesh.position.x ** 2 + mesh.position.z ** 2);
-    if (distFromOrigin > this.worldBoundsRadius) {
-      // Turn back toward (0,0) in XZ
-      this.tempVec.set(-mesh.position.x, 0, -mesh.position.z).normalize();
-      this.turnToward(this.tempVec, dt);
-    } else if (Math.random() < dt * 0.2) {
-      // Small random heading jitter for wandering
-      const randomTurn = (Math.random() - 0.5) * this.turnSpeed * dt;
-      this.rotateDirection(randomTurn);
-    }
-
-    // Move the mesh forward in the current direction
-    mesh.position.addScaledVector(this.direction, this.walkSpeed * dt);
-
-    // Align root's Y-rotation to direction
-    const heading = Math.atan2(this.direction.x, this.direction.z); // (x, z)
-    root.rotation.y = heading;
-
-    // Body bob: heavy, slow vertical & slight roll
-    const bobMain = Math.sin(this.gaitPhase * 2.0) * 0.06;   // vertical
-    const roll = Math.sin(this.gaitPhase * 1.0) * 0.03;      // side-to-side
-    root.position.set(0, this.baseHeight + bobMain, 0);
-    root.rotation.z = roll;
-
-    // Apply quadruped elephant walk pose
-    this.applyWalkPose(this.gaitPhase, bones);
-
-    // Add trunk and ears reacting to walk
+    // Trunk & ears sway according to walk
     this.applyTrunkWalk(bones, this._idleTime, this.gaitPhase);
     this.applyEarWalk(bones, this._idleTime, this.gaitPhase);
   }
@@ -445,115 +185,336 @@ export class ElephantLocomotion {
 
   turnToward(targetDir, dt) {
     // Smoothly turn current direction toward target in XZ
-    const currentHeading = Math.atan2(this.direction.x, this.direction.z);
-    const targetHeading = Math.atan2(targetDir.x, targetDir.z);
-    let delta = targetHeading - currentHeading;
+    const currentAngle = Math.atan2(this.direction.z, this.direction.x);
+    const targetAngle = Math.atan2(targetDir.z, targetDir.x);
+    let diff = targetAngle - currentAngle;
 
     // Wrap to [-π, π]
-    if (delta > Math.PI) delta -= Math.PI * 2;
-    if (delta < -Math.PI) delta += Math.PI * 2;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
 
-    const maxTurn = this.turnSpeed * dt;
-    delta = THREE.MathUtils.clamp(delta, -maxTurn, maxTurn);
+    const maxTurn = 1.2 * dt; // max turn speed
+    const clamped = Math.max(-maxTurn, Math.min(maxTurn, diff));
 
-    this.rotateDirection(delta);
+    this.rotateDirection(clamped);
   }
 
-  applyWalkPose(phase, bones) {
-    const TWO_PI = Math.PI * 2;
+  // -----------------------------
+  // CURIOUS STATE
+  // -----------------------------
 
-    // Elephants have a lateral sequence gait:
-    // - Left hind -> Left fore -> Right hind -> Right fore
-    // We'll approximate by having left side share one phase,
-    // right side the opposite (phase + π), but with heavier, slower swings.
+  /**
+   * Curious: Elephant stands mostly in place, perhaps shifting its weight,
+   * lightly swaying trunk and ears, sometimes looking around.
+   */
+  updateCurious(dt, root, bones) {
+    // Subtle breathing bob
+    const t = this._idleTime;
+    const bob = Math.sin(t * 1.3) * 0.03;
+    root.position.y = this.baseHeight + bob;
 
-    const phaseLeft = phase;                      // left limbs
-    const phaseRight = (phase + Math.PI) % TWO_PI; // right limbs
+    // Slight side-to-side shifting
+    const swaySide = Math.sin(t * 0.9) * 0.04;
+    root.rotation.z = swaySide;
 
-    // Helper to get swing
-    const swingAmpFront = 0.4;  // smaller front swing
-    const swingAmpBack = 0.5;   // slightly stronger back swing
-    const kneeBendFront = 0.7;
-    const kneeBendBack = 0.9;
+    // Gentle forward/back tilt
+    const pitch = Math.sin(t * 0.7) * 0.05;
+    root.rotation.x = pitch;
 
-    const swingLeft = Math.sin(phaseLeft);
-    const swingRight = Math.sin(phaseRight);
-
-    // BACK LEFT (phaseLeft)
-    const blUpper = bones['back_left_upper_leg'];
-    const blLower = bones['back_left_lower_leg'];
-    if (blUpper && blLower) {
-      // Upper swings forward/back
-      blUpper.rotation.x = swingAmpBack * swingLeft;
-      // Lower bends more when leg is behind
-      blLower.rotation.x = kneeBendBack * Math.max(0, -swingLeft);
-    }
-
-    // FRONT LEFT (phaseLeft, but with smaller amplitude and phase lag)
-    const flUpper = bones['front_left_upper_leg'];
-    const flLower = bones['front_left_lower_leg'];
-    const swingLeftFront = Math.sin(phaseLeft + 0.3); // a bit offset from hind
-    if (flUpper && flLower) {
-      flUpper.rotation.x = swingAmpFront * swingLeftFront;
-      flLower.rotation.x = kneeBendFront * Math.max(0, -swingLeftFront);
-    }
-
-    // BACK RIGHT (phaseRight)
-    const brUpper = bones['back_right_upper_leg'];
-    const brLower = bones['back_right_lower_leg'];
-    if (brUpper && brLower) {
-      brUpper.rotation.x = swingAmpBack * swingRight;
-      brLower.rotation.x = kneeBendBack * Math.max(0, -swingRight);
-    }
-
-    // FRONT RIGHT (phaseRight with small offset)
-    const frUpper = bones['front_right_upper_leg'];
-    const frLower = bones['front_right_lower_leg'];
-    const swingRightFront = Math.sin(phaseRight + 0.3);
-    if (frUpper && frLower) {
-      frUpper.rotation.x = swingAmpFront * swingRightFront;
-      frLower.rotation.x = kneeBendFront * Math.max(0, -swingRightFront);
-    }
-
-    // Spine follow-through: gentle nod & sway
-    const spineMid = bones['spine_mid'];
-    const spineNeck = bones['spine_neck'];
+    // Look around slowly
+    const yaw = Math.sin(t * 0.45) * 0.25;
     const head = bones['head'];
+    const neck = bones['spine_neck'];
+    if (neck) neck.rotation.y = yaw * 0.4;
+    if (head) head.rotation.y = yaw * 0.6;
 
-    const bodyPitch = Math.sin(phase * 1.0) * 0.03;
-    const bodyYaw = Math.sin(phase * 0.5) * 0.02;
+    // Use existing trunk & ear idle/walk patterns but with stronger curiousBlend
+    this.applyTrunkIdle(bones, t);
+    this.applyEarIdle(bones, t);
 
-    if (spineMid) {
-      spineMid.rotation.x = bodyPitch;
-      spineMid.rotation.y = bodyYaw * 0.7;
-    }
-    if (spineNeck) {
-      spineNeck.rotation.x = 0.1 + bodyPitch * 0.5;
-      spineNeck.rotation.y = bodyYaw;
+    // Slight neck/head extra motion for curiosity
+    if (neck) {
+      neck.rotation.x = Math.sin(t * 0.8) * 0.05;
     }
     if (head) {
-      head.rotation.x = -0.2 + bodyPitch * -0.3;
-      head.rotation.y = bodyYaw * 1.2;
+      head.rotation.x = Math.sin(t * 0.8 + 1.0) * 0.08;
+    }
+
+    // Ears flick slightly during curiosity
+    const earLeft  = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    const flap = 0.15 * Math.sin(this._stateTime * 3.0);
+    if (earLeft)  earLeft.rotation.y = flap;
+    if (earRight) earRight.rotation.y = -flap;
+  }
+
+  /**
+   * Apply damped spring secondary motion to the trunk, ears and tail.
+   * This introduces a lagging motion that follows the elephant's
+   * forward velocity and turning rate.  The springs integrate simple
+   * physics each frame.
+   */
+  applySecondaryMotion(dt, bones) {
+    const TWO_PI = Math.PI * 2;
+    const trunkBase = bones['trunk_base'];
+    const trunkMid = bones['trunk_mid'];
+    const trunkTip = bones['trunk_tip'];
+    const earLeft = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    const tailBase = bones['tail_base'];
+    const tailMid = bones['tail_mid'];
+    const tailTip = bones['tail_tip'];
+
+    // Determine a simple "forward velocity" from walkBlend + gait
+    const forwardVel = this.walkBlend * this.walkSpeed;
+    const turning = Math.sin(this.gaitPhase * TWO_PI) * this.walkBlend;
+
+    // Spring parameters
+    const stiffness = 18.0;
+    const damping = 4.5;
+
+    // Compute target offsets for trunk, ears, tail
+    const trunkTarget = forwardVel * 0.6 + turning * 0.4;
+    const earsTarget = forwardVel * 0.8 + turning * 0.4;
+    const tailTarget = forwardVel * -0.9 + turning * 0.5;
+
+    // --- Trunk spring ---
+    {
+      const s = this._spring.trunk;
+      const acc = (trunkTarget - s.angle) * stiffness - s.velocity * damping;
+      s.velocity += acc * dt;
+      s.angle += s.velocity * dt;
+
+      if (trunkBase) trunkBase.rotation.x += s.angle * 0.40;
+      if (trunkMid) trunkMid.rotation.x += s.angle * 0.65;
+      if (trunkTip) trunkTip.rotation.x += s.angle * 0.85;
+    }
+
+    // --- Ears spring ---
+    {
+      const s = this._spring.ears;
+      const acc = (earsTarget - s.angle) * stiffness - s.velocity * damping;
+      s.velocity += acc * dt;
+      s.angle += s.velocity * dt;
+      // Apply symmetrical ear swing around Y axis (forward/back sway)
+      const earLeft = bones['ear_left'];
+      const earRight = bones['ear_right'];
+      if (earLeft) earLeft.rotation.y += s.angle;
+      if (earRight) earRight.rotation.y -= s.angle;
+    }
+
+    // --- Tail spring ---
+    {
+      const s = this._spring.tail;
+      const acc = (tailTarget - s.angle) * stiffness - s.velocity * damping;
+      s.velocity += acc * dt;
+      s.angle += s.velocity * dt;
+
+      if (tailBase) tailBase.rotation.x += s.angle * 0.6;
+      if (tailMid) tailMid.rotation.x += s.angle * 0.8;
+      if (tailTip) tailTip.rotation.x += s.angle * 1.0;
     }
   }
 
+  // -----------------------------
+  // IDLE STATE
+  // -----------------------------
+
+  /**
+   * Idle: elephant stands mostly still, breathing with small motions
+   * in trunk, ears, and sometimes shifting weight.
+   */
+  updateIdle(dt, root, bones) {
+    const t = this._idleTime;
+
+    // Soft breathing bob
+    const bob = Math.sin(t * 1.2) * 0.03;
+    root.position.y = this.baseHeight + bob;
+
+    // Subtle sway
+    const sway = Math.sin(t * 0.7) * 0.02;
+    root.rotation.z = sway;
+
+    // Minor forward/back tilt
+    const pitch = Math.sin(t * 0.5) * 0.03;
+    root.rotation.x = pitch;
+
+    // Legs: keep basically under the body in idle
+    this.applyLegIdle(bones, t);
+
+    // Trunk & ears in idle
+    this.applyTrunkIdle(bones, t);
+    this.applyEarIdle(bones, t);
+  }
+
+  /**
+   * Basic idle leg pose with subtle micro-motion.
+   */
+  applyLegIdle(bones, t) {
+    const legFLU = bones['leg_front_L_upper'];
+    const legFLL = bones['leg_front_L_lower'];
+    const legFRU = bones['leg_front_R_upper'];
+    const legFRL = bones['leg_front_R_lower'];
+    const legBLU = bones['leg_back_L_upper'];
+    const legBLL = bones['leg_back_L_lower'];
+    const legBRU = bones['leg_back_R_upper'];
+    const legBRL = bones['leg_back_R_lower'];
+
+    const micro = Math.sin(t * 1.5) * 0.05;
+
+    if (legFLU) legFLU.rotation.x = 0.05 + micro * 0.4;
+    if (legFLL) legFLL.rotation.x = -0.05 + micro * 0.4;
+
+    if (legFRU) legFRU.rotation.x = 0.02 - micro * 0.3;
+    if (legFRL) legFRL.rotation.x = -0.02 - micro * 0.3;
+
+    if (legBLU) legBLU.rotation.x = -0.03 + micro * 0.5;
+    if (legBLL) legBLL.rotation.x = 0.03 + micro * 0.4;
+
+    if (legBRU) legBRU.rotation.x = -0.05 - micro * 0.5;
+    if (legBRL) legBRL.rotation.x = 0.05 - micro * 0.4;
+  }
+
+  /**
+   * Trunk idle motion: a lazy sway, somewhat slower and less intense.
+   */
+  applyTrunkIdle(bones, t) {
+    const trunkBase = bones['trunk_base'];
+    const trunkMid = bones['trunk_mid'];
+    const trunkTip = bones['trunk_tip'];
+
+    const sway = Math.sin(t * 0.8) * 0.2;
+    const dip  = Math.sin(t * 0.6) * 0.15;
+
+    if (trunkBase) {
+      trunkBase.rotation.y = sway * 0.5;
+      trunkBase.rotation.x = dip * 0.6;
+    }
+    if (trunkMid) {
+      trunkMid.rotation.y = sway * 0.7;
+      trunkMid.rotation.x = dip * 0.8;
+    }
+    if (trunkTip) {
+      trunkTip.rotation.y = sway * 0.9;
+      trunkTip.rotation.x = dip * 1.0;
+    }
+  }
+
+  applyEarIdle(bones, t) {
+    const earLeft = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    if (!earLeft && !earRight) return;
+
+    // Build a slow base motion
+    const baseFlap = Math.sin(t * 0.7) * 0.1;
+    // Occasionally trigger a stronger flap
+    const pulse = Math.max(0, Math.sin(t * 0.3)) ** 2; // 0..1
+    const strongFlap = pulse * 0.25;
+
+    const totalFlapLeft = baseFlap + strongFlap;
+    const totalFlapRight = baseFlap + strongFlap * 0.9; // slight asymmetry
+
+    if (earLeft) {
+      // Rotate around local Y so ears sway forward/back
+      earLeft.rotation.y = totalFlapLeft;
+    }
+    if (earRight) {
+      earRight.rotation.y = -totalFlapRight;
+    }
+  }
+
+  // -----------------------------
+  // WALK STATE
+  // -----------------------------
+  updateWalk(dt, root, mesh, bones) {
+    const TWO_PI = Math.PI * 2;
+
+    // Body bobbing: more pronounced than idle
+    const bob = Math.sin((this.gaitPhase * TWO_PI) * 2.0) * 0.07 * this.walkBlend;
+    root.position.y = this.baseHeight + bob;
+
+    // Forward motion: accelerate/decelerate via walkBlend
+    const speed = this.walkSpeed * this.walkBlend;
+    const dx = this.direction.x * speed * dt;
+    const dz = this.direction.z * speed * dt;
+    root.position.x += dx;
+    root.position.z += dz;
+
+    // Small forward lean at peak of step
+    const leanForward = Math.sin(this.gaitPhase * TWO_PI) * 0.12 * this.walkBlend;
+    // And side-to-side roll from weight shift
+    const roll = Math.sin(this.gaitPhase * TWO_PI * 2) * 0.06 * this.walkBlend;
+    root.rotation.x = leanForward;
+    root.rotation.z = roll;
+
+    // Leg stepping pattern (lateral sequence)
+    this.applyLegWalk(bones, this.gaitPhase);
+
+    // Trunk sway & dip while walking
+    this.applyTrunkWalk(bones, this._idleTime, this.gaitPhase);
+
+    // Ears: more active flapping when walking
+    this.applyEarWalk(bones, this._idleTime, this.gaitPhase);
+  }
+
+  /**
+   * Lateral-sequence walk:
+   * - front left, rear left, front right, rear right
+   * We approximate with phase offsets for each leg.
+   */
+  applyLegWalk(bones, phase) {
+    const TWO_PI = Math.PI * 2;
+
+    const legFLU = bones['leg_front_L_upper'];
+    const legFLL = bones['leg_front_L_lower'];
+    const legFRU = bones['leg_front_R_upper'];
+    const legFRL = bones['leg_front_R_lower'];
+    const legBLU = bones['leg_back_L_upper'];
+    const legBLL = bones['leg_back_L_lower'];
+    const legBRU = bones['leg_back_R_upper'];
+    const legBRL = bones['leg_back_R_lower'];
+
+    const amplitudeFront = 0.55;
+    const amplitudeBack  = 0.65;
+    const kneeBendFactor = 0.75;
+
+    // Phase offsets for each leg
+    const phaseFL = phase;
+    const phaseBL = (phase + 0.25) % 1;
+    const phaseFR = (phase + 0.5) % 1;
+    const phaseBR = (phase + 0.75) % 1;
+
+    const swing = (p, amp) => Math.sin(p * TWO_PI) * amp;
+    const knee  = (p, factor) => Math.max(0, -Math.sin(p * TWO_PI)) * factor;
+
+    // Front Left
+    if (legFLU) legFLU.rotation.x = swing(phaseFL, amplitudeFront) * 0.9;
+    if (legFLL) legFLL.rotation.x = knee(phaseFL, kneeBendFactor);
+
+    // Back Left
+    if (legBLU) legBLU.rotation.x = swing(phaseBL, amplitudeBack);
+    if (legBLL) legBLL.rotation.x = knee(phaseBL, kneeBendFactor * 1.1);
+
+    // Front Right
+    if (legFRU) legFRU.rotation.x = swing(phaseFR, amplitudeFront);
+    if (legFRL) legFRL.rotation.x = knee(phaseFR, kneeBendFactor);
+
+    // Back Right
+    if (legBRU) legBRU.rotation.x = swing(phaseBR, amplitudeBack) * 1.1;
+    if (legBRL) legBRL.rotation.x = knee(phaseBR, kneeBendFactor * 1.05);
+  }
+
+  /**
+   * Trunk movement while walking: larger sway and dip than idle,
+   * and also correlated with gaitPhase.
+   */
   applyTrunkWalk(bones, t, phase) {
     const trunkBase = bones['trunk_base'];
     const trunkMid = bones['trunk_mid'];
     const trunkTip = bones['trunk_tip'];
 
-    if (!trunkBase && !trunkMid && !trunkTip) return;
-
-    // Walking adds a rhythmic trunk swing synchronized with gait
-    const gaitSway = Math.sin(phase) * 0.25;      // left/right
-    const gaitDip = Math.sin(phase * 2.0) * 0.1;  // up/down
-
-    // Idle baseline sway layered in for organic motion
-    const idleSway = Math.sin(t * 0.6) * 0.08;
-    const idleDip = Math.sin(t * 0.8) * 0.05;
-
-    const sway = gaitSway + idleSway;
-    const dip = gaitDip + idleDip;
+    const sway = Math.sin(t * 1.5) * 0.4 + Math.sin(phase * Math.PI * 2) * 0.3;
+    const dip  = Math.sin(t * 1.2 + 1.0) * 0.3;
 
     if (trunkBase) {
       trunkBase.rotation.y = sway * 0.8;
@@ -582,10 +543,10 @@ export class ElephantLocomotion {
     const totalRight = gaitFlap + idleFlap * 0.9;
 
     if (earLeft) {
-      earLeft.rotation.z = totalLeft;
+      earLeft.rotation.y = totalLeft;
     }
     if (earRight) {
-      earRight.rotation.z = -totalRight;
+      earRight.rotation.y = -totalRight;
     }
   }
 

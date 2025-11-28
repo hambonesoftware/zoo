@@ -28,11 +28,11 @@ export const ElephantDefinition = {
     { name: 'tusk_right_tip', parent: 'tusk_right', position: [-0.1, 0.3, 0.5] },
 
     // === Ears (Start -> Tip) ===
-    { name: 'ear_left',    parent: 'head',        position: [ 0.4, 0.1, -0.2] },
-    { name: 'ear_left_tip', parent: 'ear_left',   position: [ 0.6, -0.6, -0.1] }, // Flop down
+    { name: 'ear_left',    parent: 'head',        position: [ 0.4, 0.1, -0.5] },
+    { name: 'ear_left_tip', parent: 'ear_left',   position: [ 0.6, -0.6, -0.4] }, // Flop down
 
-    { name: 'ear_right',   parent: 'head',        position: [-0.4, 0.1, -0.2] },
-    { name: 'ear_right_tip', parent: 'ear_right', position: [-0.6, -0.6, -0.1] },
+    { name: 'ear_right',   parent: 'head',        position: [-0.4, 0.1, -0.5] },
+    { name: 'ear_right_tip', parent: 'ear_right', position: [-0.6, -0.6, -0.4] },
 
     // === Tail ===
     { name: 'tail_base',   parent: 'spine_base', position: [0, 0.3, -0.3] },

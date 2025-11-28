@@ -110,43 +110,48 @@ export class ElephantGenerator {
     // Helper to build a pivot-based transform matrix for ears.
     // We:
     //   1) translate geometry so the ear root is at the origin,
-    //   2) rotate 90deg about X,
+    //   2) rotate about X to flop the ear down,
     //   3) flatten along Z so the ear becomes a thin slice,
     //   4) translate back to the original root position.
     const makeEarTransformMatrix = (earRootName) => {
-      const earRootBone = getBoneByName(earRootName);
-      if (!earRootBone) {
-        return new THREE.Matrix4(); // identity
-      }
+	  const earRootBone = getBoneByName(earRootName);
+	  if (!earRootBone) {
+		return new THREE.Matrix4(); // identity
+	  }
 
-      const pivot = new THREE.Vector3().setFromMatrixPosition(
-        earRootBone.matrixWorld
-      );
+	  const pivot = new THREE.Vector3().setFromMatrixPosition(
+		earRootBone.matrixWorld
+	  );
 
-      const toOrigin = new THREE.Matrix4().makeTranslation(
-        -pivot.x,
-        -pivot.y,
-        -pivot.z
-      );
-      const fromOrigin = new THREE.Matrix4().makeTranslation(
-        pivot.x,
-        pivot.y,
-        pivot.z
-      );
+	  const toOrigin = new THREE.Matrix4().makeTranslation(
+		-pivot.x,
+		-pivot.y,
+		-pivot.z
+	  );
+	  const fromOrigin = new THREE.Matrix4().makeTranslation(
+		pivot.x,
+		pivot.y,
+		pivot.z
+	  );
 
-      // Rotate 90 degrees about X and strongly flatten in Z.
-      const rotateX = new THREE.Matrix4().makeRotationZ(-Math.PI/4);
-      const flatten = new THREE.Matrix4().makeScale(1.5, 1.0, 0.18);
+	  // Use Z rotation for the ear fan, but mirror the angle for left vs right.
+	  const baseAngle = Math.PI / 4; // 45°
+	  const isLeft = earRootName.toLowerCase().includes('left');
+	  const tiltAngle = isLeft ? baseAngle : -baseAngle;
 
-      // Combined transform: T_back * R * S * T_toOrigin
-      const m = new THREE.Matrix4();
-      m.copy(fromOrigin);
-      m.multiply(rotateX);
-      m.multiply(flatten);
-      m.multiply(toOrigin);
+	  const rotate = new THREE.Matrix4().makeRotationZ(tiltAngle);
+	  const flatten = new THREE.Matrix4().makeScale(1.5, 1.0, 0.18);
 
-      return m;
-    };
+	  // Combined transform: T_back * R * S * T_toOrigin
+	  const m = new THREE.Matrix4();
+	  m.copy(fromOrigin);
+	  m.multiply(rotate);
+	  m.multiply(flatten);
+	  m.multiply(toOrigin);
+
+	  return m;
+	};
+
 
     // === 1. TORSO (The Tank) ===
     // Radii indices map to: [Hips, Ribcage, NeckBase]
@@ -184,11 +189,13 @@ export class ElephantGenerator {
     });
 
     // === 2. NECK (Front torso ring -> head base) ===
+    // Separate neck segment from spine_neck to head.
     const neckRadiusAtHead = 0.4 * (0.95 * headScale); // 40% of head diameter for slimmer profile
     const neckGeometry = generateNeckGeometry(skeleton, {
-      bones: ['spine_neck', 'spine_head'],
+      // Use actual bones that exist in the rig: spine_neck -> head
+      bones: ['spine_neck', 'head'],
       headBone: 'head',
-      neckTipBone: 'spine_head',
+      neckTipBone: 'head',
       radii: [neckRadiusAtHead * 1.1, neckRadiusAtHead * 0.95],
       sides: lowPoly ? Math.max(neckSidesLowPoly, 8) : 18,
       capBase: true
@@ -202,15 +209,14 @@ export class ElephantGenerator {
     });
 
     // === 4. TRUNK (Prehensile) ===
-	const trunkGeometry = generateTailGeometry(skeleton, {
-	  bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
-	  // A touch more sides in low-poly mode so faces aren’t crazy skinny
-	  sides: lowPoly ? Math.max(trunkSidesLowPoly, 12) : 24,
-	  // Slightly thicker and less extreme taper
-	  baseRadius: 0.52,
-	  tipRadius: 0.26
-	});
-
+    const trunkGeometry = generateTailGeometry(skeleton, {
+      bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
+      // A touch more sides in low-poly mode so faces aren’t crazy skinny
+      sides: lowPoly ? Math.max(trunkSidesLowPoly, 12) : 24,
+      // Slightly thicker and less extreme taper
+      baseRadius: 0.52,
+      tipRadius: 0.26
+    });
 
     // === 5. TUSKS (Start -> Tip) ===
     const leftTusk = generateTailGeometry(skeleton, {
