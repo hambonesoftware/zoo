@@ -21,7 +21,11 @@ import * as BufferGeometryUtils from '../../libs/BufferGeometryUtils.js';
  *       When true, add a triangle-fan cap at the first ring (rump).
  *   - capEnd: boolean
  *       When true, add a triangle-fan cap at the last ring (neck/front).
- *   - extendRumpToRearLegs: boolean | { bones?: string[], extraMargin?: number }
+ *   - extendRumpToRearLegs: boolean | {
+ *       bones?: string[],
+ *       extraMargin?: number,
+ *       boneRadii?: Record<string, number>
+ *     }
  *       When enabled, inserts an extra rump ring behind the hips so the torso
  *       extends to cover (and slightly beyond) the rear-most leg position.
  *       Accepts an optional list of leg bone names to measure and an optional
@@ -122,6 +126,13 @@ export function generateTorsoGeometry(skeleton, options = {}) {
       ? extendRumpToRearLegs.bones
       : defaultRearLegBones;
 
+    const rearLegRadii =
+      typeof extendRumpToRearLegs === 'object' &&
+      extendRumpToRearLegs.boneRadii &&
+      typeof extendRumpToRearLegs.boneRadii === 'object'
+        ? extendRumpToRearLegs.boneRadii
+        : null;
+
     let maxRearOffset = null;
 
     rearLegBones.forEach((name) => {
@@ -130,7 +141,17 @@ export function generateTorsoGeometry(skeleton, options = {}) {
       const legPos = new THREE.Vector3().setFromMatrixPosition(
         legBone.matrixWorld
       );
-      const offset = legPos.clone().sub(rumpCenter).dot(bodyBack);
+
+      const legRadius =
+        rearLegRadii && typeof rearLegRadii[name] === 'number'
+          ? Math.max(0, rearLegRadii[name])
+          : 0;
+
+      const rearMostPoint = legPos
+        .clone()
+        .add(bodyBack.clone().multiplyScalar(legRadius));
+
+      const offset = rearMostPoint.sub(rumpCenter).dot(bodyBack);
       if (offset > 0) {
         maxRearOffset = maxRearOffset === null ? offset : Math.max(maxRearOffset, offset);
       }

@@ -144,6 +144,15 @@ export class ElephantGenerator {
 
     // === 1. TORSO (The Tank) ===
     // Radii indices map to: [Hips, Ribcage, NeckBase, HeadBase]
+    const rearLegRadii = {
+      back_left_upper: 0.5 * legScale,
+      back_right_upper: 0.5 * legScale,
+      back_left_lower: 0.42 * legScale,
+      back_right_lower: 0.42 * legScale,
+      back_left_foot: 0.44 * legScale,
+      back_right_foot: 0.44 * legScale
+    };
+
     const torsoGeometry = generateTorsoGeometry(skeleton, {
       bones: ['spine_base', 'spine_mid', 'spine_neck', 'head'],
       // [hips, ribcage, neck base, head / neck tip]
@@ -160,7 +169,8 @@ export class ElephantGenerator {
           'back_left_upper',
           'back_right_upper'
         ],
-        extraMargin: 0.05
+        extraMargin: 0.05,
+        boneRadii: rearLegRadii
       },
       lowPoly,
       lowPolySegments: lowPoly ? lowPolyTorsoSegments : undefined,
