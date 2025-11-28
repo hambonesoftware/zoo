@@ -4,7 +4,8 @@ export const ElephantDefinition = {
   bones: [
     // === Main Body Column (The Barrel) ===
     // spine_base = Hips. High up.
-    { name: 'spine_base',  parent: 'root',       position: [0, 2.1, 0] }, 
+    { name: 'spine_rump',  parent: 'root',       position: [0, 2.1, -0.6] },
+    { name: 'spine_base',  parent: 'spine_rump', position: [0, 0.0, 0.6] },
     // spine_mid = Ribcage. Lower and forward.
     { name: 'spine_mid',   parent: 'spine_base', position: [0, -0.1, 1.1] },
     // spine_neck = Shoulder hump.
@@ -69,6 +70,7 @@ export const ElephantDefinition = {
   sizes: {
     // === MASSIVE BODY RADII ===
     // We increase these to simulate the width of hips/shoulders
+    spine_rump:   [0.9, 0.9, 1.0],
     spine_base:   [1.1, 1.1, 1.2], // Huge rump
     spine_mid:    [1.25, 1.35, 1.3], // Huge barrel chest
     spine_neck:   [1.0, 1.1, 1.0], // Thick neck base

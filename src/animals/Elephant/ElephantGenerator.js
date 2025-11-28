@@ -143,11 +143,17 @@ export class ElephantGenerator {
     };
 
     // === 1. TORSO (The Tank) ===
-    // Radii indices map to: [Hips, Ribcage, NeckBase, HeadBase]
+    // Radii indices map to: [Rump, Hips, Ribcage, NeckBase, HeadBase]
     const torsoGeometry = generateTorsoGeometry(skeleton, {
-      bones: ['spine_base', 'spine_mid', 'spine_neck', 'head'],
-      // [hips, ribcage, neck base, head / neck tip]
-      radii: [0.95 * headScale, 1.4, 1.15, 0.9 * headScale],
+      bones: ['spine_rump', 'spine_base', 'spine_mid', 'spine_neck', 'head'],
+      // [rump, hips, ribcage, neck base, head / neck tip]
+      radii: [
+        0.95 * headScale,
+        1.15 * headScale,
+        1.35,
+        1.15,
+        0.9 * headScale
+      ],
       sides: 28,
       radiusProfile: torsoRadiusProfile,
       lowPoly,
@@ -163,15 +169,14 @@ export class ElephantGenerator {
     });
 
     // === 3. TRUNK (Prehensile) ===
-	const trunkGeometry = generateTailGeometry(skeleton, {
-	  bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
-	  // A touch more sides in low-poly mode so faces aren’t crazy skinny
-	  sides: lowPoly ? Math.max(trunkSidesLowPoly, 12) : 24,
-	  // Slightly thicker and less extreme taper
-	  baseRadius: 0.52,
-	  tipRadius: 0.26
-	});
-
+    const trunkGeometry = generateTailGeometry(skeleton, {
+      bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
+      // A touch more sides in low-poly mode so faces aren’t crazy skinny
+      sides: lowPoly ? Math.max(trunkSidesLowPoly, 12) : 24,
+      // Slightly thicker and less extreme taper
+      baseRadius: 0.52,
+      tipRadius: 0.26
+    });
 
     // === 4. TUSKS (Start -> Tip) ===
     const leftTusk = generateTailGeometry(skeleton, {
@@ -218,6 +223,7 @@ export class ElephantGenerator {
 
     // === 6. TAIL ===
     const tailGeometry = generateTailGeometry(skeleton, {
+      rootBone: 'spine_rump',
       bones: ['tail_base', 'tail_mid', 'tail_tip'],
       sides: lowPoly ? tailSidesLowPoly : 14,
       baseRadius: 0.15,
