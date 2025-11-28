@@ -44,8 +44,13 @@ export class ElephantCreature extends THREE.Group {
     // 4. Debug
     if (options.debug) {
       this.skeletonHelper = new THREE.SkeletonHelper(this.mesh);
-      this.skeletonHelper.material.linewidth = 2;
-      this.skeletonHelper.material.color.set(0xffff00); // Yellow for visibility
+      this.skeletonHelper.material.linewidth = 1;
+      this.skeletonHelper.material.color.set(0x00ff66); // Thin neon green lines
+      this.skeletonHelper.material.transparent = true;
+      this.skeletonHelper.material.opacity = 0.9;
+      this.skeletonHelper.material.blending = THREE.AdditiveBlending;
+      this.skeletonHelper.material.depthWrite = false;
+      this.skeletonHelper.material.toneMapped = false;
       this.add(this.skeletonHelper);
     }
 
