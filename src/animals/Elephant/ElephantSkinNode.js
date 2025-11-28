@@ -82,31 +82,48 @@ export function createElephantSkinMaterial(options = {}) {
   // ------------------------------------------------------------
   // All regional masks are intentionally soft and subtle so the
   // elephant still reads as one cohesive material.
+  //
+  // Limb-by-limb shading methods:
+  // - Trunk: forward (z) and downward (y) mask gently darkens the
+  //   trunk so it reads separately from the head while keeping detail
+  //   aligned to local space for animation.
+  // - Legs: a negative y mask lifts brightness toward the toes,
+  //   letting lower limbs pick up more light without flattening the
+  //   upper leg mass.
+  // - Tusks: forward-facing z mask brightens and drives lower
+  //   roughness, giving tusks a smoother, more reflective look than
+  //   skin.
+  // - Toe band: a narrow y-driven highlight at the hoof height keeps
+  //   feet legible against the ground plane.
+  // - Ears: side-facing (x) and inward (z) masks blend toward a warm
+  //   pink on the inner ear, while outer surfaces stay near the base
+  //   grey for form separation.
 
   // Trunk: darken the trunk slightly. The trunk sits mostly forward
   // along the Z axis and below the head along the Y axis.
-  const trunkMask = positionLocal.z.mul(0.5).add(0.35)
-    .mul(positionLocal.y.mul(-0.25).add(0.75));
-  const trunkColor = baseCol.mul(0.9);
+  const trunkForward = positionLocal.z.mul(0.6).add(0.35).clamp(0.0, 1.0);
+  const trunkDown = positionLocal.y.mul(-0.6).add(0.35).clamp(0.0, 1.0);
+  const trunkMask = trunkForward.mul(trunkDown);
+  const trunkColor = baseCol.mul(0.9); // darker but stays cohesive with the head
 
   // Legs: lighten the legs slightly toward the toes. Negative Y
   // positions correspond to the lower parts of the limbs.
-  const legMask = positionLocal.y.mul(-1.0).mul(0.35).add(0.65);
+  const legMask = positionLocal.y.mul(-0.8).add(0.4).clamp(0.0, 1.0);
   const legColor = baseCol.mul(1.08);
 
   // Tusks: brighten tusks and reduce roughness. Tusks protrude forward
   // along positive Z and sit near the head. Use a mask based on Z.
-  const tuskMask = positionLocal.z.mul(0.6).add(0.4);
+  const tuskMask = positionLocal.z.mul(0.6).add(0.4).clamp(0.0, 1.0);
   const tuskColor = baseCol.mul(1.8);
 
   // Toe ring: highlight the toe/hoof band near the base of each leg.
-  const toeMask = positionLocal.y.mul(-2.0).add(1.4);
+  const toeMask = positionLocal.y.mul(-3.5).add(1.8).clamp(0.0, 1.0);
   const toeColor = baseCol.mul(1.25);
 
   // Ear interior: softly blend to a warm pink on inward-facing surfaces
   // near the head, keeping the exterior closer to the base grey.
-  const earSideMask = positionLocal.x.abs().mul(0.7).add(0.15);
-  const earFacingMask = positionLocal.z.mul(-1.0).mul(0.9).add(0.55);
+  const earSideMask = positionLocal.x.abs().mul(0.75).add(0.1).clamp(0.0, 1.0);
+  const earFacingMask = positionLocal.z.mul(-1.0).mul(0.9).add(0.55).clamp(0.0, 1.0);
   const earMask = earSideMask.mul(earFacingMask);
   const earColor = color(0xf2c8c6);
 
