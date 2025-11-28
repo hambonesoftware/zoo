@@ -15,8 +15,8 @@ export const ElephantDefinition = {
     { name: 'head',        parent: 'spine_head', position: [0, -0.15, 0.45] },
 
     // === Trunk (Chain) ===
-    { name: 'trunk_anchor', parent: 'head',        position: [0, -0.05, 0.95] },
-    { name: 'trunk_root',   parent: 'trunk_anchor', position: [0, -0.1, 0.25] },
+    { name: 'trunk_anchor', parent: 'head',        position: [0, -0.12, 1.2] },
+    { name: 'trunk_root',   parent: 'trunk_anchor', position: [0, -0.05, 0.4] },
     { name: 'trunk_base',   parent: 'trunk_root',   position: [0, -0.35, 0.25] },
     { name: 'trunk_mid1',  parent: 'trunk_base',  position: [0, -0.5, 0.1] },
     { name: 'trunk_mid2',  parent: 'trunk_mid1',  position: [0, -0.5, 0.0] },
