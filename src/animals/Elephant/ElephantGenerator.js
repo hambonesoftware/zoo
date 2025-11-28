@@ -147,18 +147,20 @@ export class ElephantGenerator {
     const torsoGeometry = generateTorsoGeometry(skeleton, {
       bones: ['spine_base', 'spine_mid', 'spine_neck', 'head'],
       // [hips, ribcage, neck base, head / neck tip]
-      radii: [0.95 * headScale, 1.4, 1.15, 0.9 * headScale],
+      radii: [1.15 * headScale, 1.35, 1.15, 0.9 * headScale],
       sides: 28,
       radiusProfile: torsoRadiusProfile,
+      rumpBulgeDepth: 0.4,
       extendRumpToRearLegs: {
         bones: [
-          'back_left_upper',
-          'back_left_lower',
           'back_left_foot',
-          'back_right_upper',
+          'back_right_foot',
+          'back_left_lower',
           'back_right_lower',
-          'back_right_foot'
-        ]
+          'back_left_upper',
+          'back_right_upper'
+        ],
+        extraMargin: 0.05
       },
       lowPoly,
       lowPolySegments: lowPoly ? lowPolyTorsoSegments : undefined,
