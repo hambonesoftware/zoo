@@ -186,11 +186,10 @@ export class ElephantGenerator {
     // === 2. NECK (Front torso ring -> head base) ===
     const neckRadiusAtHead = 0.75 * (0.95 * headScale); // 75% of head diameter
     const neckGeometry = generateNeckGeometry(skeleton, {
-      bones: ['spine_neck'],
+      bones: ['spine_neck', 'spine_head'],
       headBone: 'head',
-      neckTipBone: 'spine_neck',
-      baseRadius: neckRadiusAtHead,
-      neckRadius: neckRadiusAtHead,
+      neckTipBone: 'spine_head',
+      radii: [neckRadiusAtHead * 1.05, neckRadiusAtHead * 0.92],
       sides: lowPoly ? Math.max(neckSidesLowPoly, 8) : 18
     });
 
