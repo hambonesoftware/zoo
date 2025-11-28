@@ -5,6 +5,7 @@ import { generateTorsoGeometry } from '../bodyParts/TorsoGenerator.js';
 import { generateNeckGeometry } from '../bodyParts/NeckGenerator.js';
 import { generateHeadGeometry } from '../bodyParts/HeadGenerator.js';
 import { generateTailGeometry } from '../bodyParts/TailGenerator.js';
+import { generateNoseGeometry } from '../bodyParts/NoseGenerator.js';
 import { generateLimbGeometry } from '../bodyParts/LimbGenerator.js';
 import { mergeGeometries } from '../../libs/BufferGeometryUtils.js';
 import { ElephantBehavior } from './ElephantBehavior.js';
@@ -426,7 +427,7 @@ export class ElephantGenerator {
     });
 
     // === 4. TRUNK (Prehensile) ===
-    const trunkGeometry = generateTailGeometry(skeleton, {
+    const trunkGeometry = generateNoseGeometry(skeleton, {
       bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
       rootBone: trunkRootBoneName,
       // A touch more sides in low-poly mode so faces aren’t crazy skinny
@@ -438,7 +439,7 @@ export class ElephantGenerator {
     });
 
     // === 5. TUSKS (Start -> Tip) ===
-    const leftTusk = generateTailGeometry(skeleton, {
+    const leftTusk = generateNoseGeometry(skeleton, {
       bones: ['tusk_left', 'tusk_left_tip'],
       sides: lowPoly ? tuskSidesLowPoly : 16,
       baseRadius: 0.12,
@@ -446,7 +447,7 @@ export class ElephantGenerator {
       lengthScale: tuskScale
     });
 
-    const rightTusk = generateTailGeometry(skeleton, {
+    const rightTusk = generateNoseGeometry(skeleton, {
       bones: ['tusk_right', 'tusk_right_tip'],
       sides: lowPoly ? tuskSidesLowPoly : 16,
       baseRadius: 0.12,
