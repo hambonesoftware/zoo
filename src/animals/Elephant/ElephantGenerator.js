@@ -101,6 +101,7 @@ export class ElephantGenerator {
     const legScale = 1.0 + (variantFactor - 0.5) * 0.2; // ±10%
     const tuskScale = 1.0 + (variantFactor - 0.5) * 0.3; // ±15%
     const headScale = 1.0 + (0.5 - variantFactor) * 0.15; // ±7.5%
+    const headRadius = 0.95 * headScale;
     const torsoRadiusProfile = makeElephantTorsoRadiusProfile(headScale);
 
     // Helper to get a bone by name.
@@ -219,22 +220,35 @@ export class ElephantGenerator {
 
     // Limit trunk diameter to 80% of tusk separation
     const maxTrunkRadius = (tuskSeparation * 0.8) * 0.5;
+    const maxTrunkRadiusByHead = headRadius * 0.6; // prevent intersection with head dome
 
-    const defaultTrunkBaseRadius = 0.52;
+    const defaultTrunkBaseRadius = 0.46;
     const defaultTrunkMidRadius =
       typeof options.trunkMidRadius === 'number'
         ? options.trunkMidRadius
         : 0.07;
     const defaultTrunkTipRadius = 0.26;
 
-    const trunkBaseRadius = Math.min(defaultTrunkBaseRadius, maxTrunkRadius);
-    const trunkMidRadius = Math.min(defaultTrunkMidRadius, maxTrunkRadius);
-    const trunkTipRadius = Math.min(defaultTrunkTipRadius, maxTrunkRadius);
+    const trunkBaseRadius = Math.min(
+      defaultTrunkBaseRadius,
+      maxTrunkRadius,
+      maxTrunkRadiusByHead
+    );
+    const trunkMidRadius = Math.min(
+      defaultTrunkMidRadius,
+      maxTrunkRadius,
+      maxTrunkRadiusByHead
+    );
+    const trunkTipRadius = Math.min(
+      defaultTrunkTipRadius,
+      maxTrunkRadius,
+      maxTrunkRadiusByHead
+    );
 
     // === 3. HEAD ===
     const headGeometry = generateHeadGeometry(skeleton, {
       parentBone: 'head',
-      radius: 0.95 * headScale, // Big dome scaled by variant
+      radius: headRadius, // Big dome scaled by variant
       sides: lowPoly ? headSidesLowPoly : 22
     });
 
