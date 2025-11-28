@@ -67,6 +67,6 @@ export class CatCreature extends THREE.Group {
 
   update(delta) {
     if (this.behavior) this.behavior.update(delta);
-    if (this.skeletonHelper) this.skeletonHelper.update();
+    if (this.skeletonHelper) this.skeletonHelper.updateMatrixWorld(true);
   }
 }
