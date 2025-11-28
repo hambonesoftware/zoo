@@ -143,7 +143,7 @@ export class ElephantGenerator {
     };
 
     // === 1. TORSO (The Tank) ===
-    // Radii indices map to: [Hips, Ribcage, NeckBase, HeadBase]
+    // Radii indices map to: [Hips, Ribcage, NeckBase]
     const rearLegRadii = {
       back_left_upper: 0.5 * legScale,
       back_right_upper: 0.5 * legScale,
@@ -154,9 +154,9 @@ export class ElephantGenerator {
     };
 
     const torsoGeometry = generateTorsoGeometry(skeleton, {
-      bones: ['spine_base', 'spine_mid', 'spine_neck', 'head'],
-      // [hips, ribcage, neck base, head / neck tip]
-      radii: [1.15 * headScale, 1.35, 1.15, 0.9 * headScale],
+      bones: ['spine_base', 'spine_mid', 'spine_neck'],
+      // [hips, ribcage, neck base]
+      radii: [1.15 * headScale, 1.35, 1.0 * headScale],
       sides: 28,
       radiusProfile: torsoRadiusProfile,
       rumpBulgeDepth: 0.4,
