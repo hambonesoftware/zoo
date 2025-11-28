@@ -265,7 +265,10 @@ export class ElephantGenerator {
 
     const headClearanceRadius = headRadius + trunkBaseRadius + 0.05;
     const headCenterInitial =
-      sampleBonePosition('head') || sampleBonePosition('head_tip') || null;
+      sampleBonePosition('head') ||
+      sampleBonePosition('head_tip_2') ||
+      sampleBonePosition('head_tip_1') ||
+      null;
 
     const ensureTrunkStartsOutsideHead = () => {
       if (!headCenterInitial) {
@@ -315,7 +318,8 @@ export class ElephantGenerator {
     if (debugVolumes) {
       const trackedBones = [
         'head',
-        'head_tip',
+        'head_tip_1',
+        'head_tip_2',
         'trunk_anchor',
         'trunk_root',
         'trunk_base',
@@ -332,7 +336,7 @@ export class ElephantGenerator {
       }, {});
 
       const headCenterLog =
-        headCenterInitial || positions.head || positions.head_tip || null;
+        headCenterInitial || positions.head || positions.head_tip_2 || positions.head_tip_1 || null;
       const headSphereRadius = headClearanceRadius;
 
       console.log('[ElephantGenerator][debugVolumes] --- Elephant head/trunk setup ---');

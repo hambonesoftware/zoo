@@ -77,6 +77,9 @@ export class ElephantCreature extends THREE.Group {
       const bone = new THREE.Bone();
       bone.name = def.name;
       bone.position.fromArray(def.position);
+      if (def.rotation) {
+        bone.rotation.fromArray(def.rotation);
+      }
       boneMap[def.name] = bone;
     }
 
