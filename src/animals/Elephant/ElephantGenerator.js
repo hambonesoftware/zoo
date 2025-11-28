@@ -48,6 +48,12 @@ export class ElephantGenerator {
         ? options.lowPolyTrunkSides
         : 10;
 
+    const neckSidesLowPoly =
+      typeof options.lowPolyNeckSides === 'number' &&
+      options.lowPolyNeckSides >= 3
+        ? options.lowPolyNeckSides
+        : 12;
+
     const tuskSidesLowPoly =
       typeof options.lowPolyTuskSides === 'number' &&
       options.lowPolyTuskSides >= 3
@@ -177,14 +183,25 @@ export class ElephantGenerator {
       lowPolyWeldTolerance: lowPoly ? lowPolyTorsoWeldTolerance : 0
     });
 
-    // === 2. HEAD ===
+    // === 2. NECK (Front torso ring -> head base) ===
+    const neckRadiusAtHead = 0.75 * (0.95 * headScale); // 75% of head diameter
+    const neckGeometry = generateNeckGeometry(skeleton, {
+      bones: ['spine_neck'],
+      headBone: 'head',
+      neckTipBone: 'spine_neck',
+      baseRadius: neckRadiusAtHead,
+      neckRadius: neckRadiusAtHead,
+      sides: lowPoly ? Math.max(neckSidesLowPoly, 8) : 18
+    });
+
+    // === 3. HEAD ===
     const headGeometry = generateHeadGeometry(skeleton, {
       parentBone: 'head',
       radius: 0.95 * headScale, // Big dome scaled by variant
       sides: lowPoly ? headSidesLowPoly : 22
     });
 
-    // === 3. TRUNK (Prehensile) ===
+    // === 4. TRUNK (Prehensile) ===
 	const trunkGeometry = generateTailGeometry(skeleton, {
 	  bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
 	  // A touch more sides in low-poly mode so faces aren’t crazy skinny
@@ -195,7 +212,7 @@ export class ElephantGenerator {
 	});
 
 
-    // === 4. TUSKS (Start -> Tip) ===
+    // === 5. TUSKS (Start -> Tip) ===
     const leftTusk = generateTailGeometry(skeleton, {
       bones: ['tusk_left', 'tusk_left_tip'],
       sides: lowPoly ? tuskSidesLowPoly : 16,
@@ -212,7 +229,7 @@ export class ElephantGenerator {
       lengthScale: tuskScale
     });
 
-    // === 5. EARS ===
+    // === 6. EARS ===
     // We create a thin, sagging flap by using a limb generator, then
     // reshape it into a flattened, cone-slice fan around the ear root.
     const leftEar = generateLimbGeometry(skeleton, {
@@ -238,7 +255,7 @@ export class ElephantGenerator {
     leftEar.computeVertexNormals();
     rightEar.computeVertexNormals();
 
-    // === 6. TAIL ===
+    // === 7. TAIL ===
     const tailGeometry = generateTailGeometry(skeleton, {
       bones: ['tail_base', 'tail_mid', 'tail_tip'],
       sides: lowPoly ? tailSidesLowPoly : 14,
@@ -246,7 +263,7 @@ export class ElephantGenerator {
       tipRadius: 0.05
     });
 
-    // === 7. LEGS (Pillars) ===
+    // === 8. LEGS (Pillars) ===
     const legConfig = {
       sides: lowPoly ? legSidesLowPoly : 20
     };
@@ -376,6 +393,7 @@ export class ElephantGenerator {
     const mergedGeometry = mergeGeometries(
       [
         torsoGeometry,
+        neckGeometry,
         headGeometry,
         trunkGeometry,
         leftTusk,

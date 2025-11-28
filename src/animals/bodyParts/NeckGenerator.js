@@ -6,7 +6,12 @@ import { createRing, bridgeRings, buildBufferGeometry } from '../../utils/Geomet
 export function generateNeckGeometry(skeleton, options = {}) {
   const sides = options.sides || 8;
   const yOffset = options.yOffset || 0;
-  const neckChain = ['spine_mid', 'spine_neck'];
+  const neckChain =
+    Array.isArray(options.bones) && options.bones.length > 0
+      ? options.bones
+      : ['spine_mid', 'spine_neck'];
+  const headBoneName = options.headBone || 'head';
+  const neckTopName = options.neckTipBone || neckChain[neckChain.length - 1];
 
   const boneIndexMap = {};
   skeleton.bones.forEach((bone, idx) => { boneIndexMap[bone.name] = idx; });
@@ -19,9 +24,15 @@ export function generateNeckGeometry(skeleton, options = {}) {
     return new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld);
   };
   const neckPoints = neckChain.map(getPos);
-  const baseRadius = options.baseRadius || 0.12; 
+  const baseRadius = options.baseRadius || 0.12;
   const neckRadius = options.neckRadius || 0.08;
-  const radii = [baseRadius, neckRadius];
+  const radiiSource =
+    Array.isArray(options.radii) && options.radii.length > 0
+      ? options.radii
+      : [baseRadius, neckRadius];
+  const radii = neckChain.map((_, idx) =>
+    radiiSource[Math.min(idx, radiiSource.length - 1)]
+  );
 
   const positions = [];
   const normals = [];
@@ -79,10 +90,10 @@ export function generateNeckGeometry(skeleton, options = {}) {
       positions[(rimStartIdx + j) * 3 + 2]
     ));
   }
-  const neckTop = getPos('spine_neck');
-  const headPos = getPos('head');
+  const neckTop = getPos(neckTopName);
+  const headPos = getPos(headBoneName);
   const apex = neckTop.clone().lerp(headPos, 0.5);
-  const capSegments = 2; 
+  const capSegments = 2;
 
   for (let seg = 1; seg <= capSegments; seg++) {
     const t = seg / capSegments;
@@ -93,8 +104,8 @@ export function generateNeckGeometry(skeleton, options = {}) {
       const normal = apex.clone().sub(rimVert).normalize();
       normals.push(normal.x, normal.y, normal.z);
       uvs.push(j / sides, t);
-      let skinA = boneIndexMap['spine_neck'];
-      let skinB = boneIndexMap['head'];
+      let skinA = boneIndexMap[neckTopName];
+      let skinB = boneIndexMap[headBoneName];
       let wa = 1 - t;
       let wb = t;
       skinIndices.push(skinA, skinB, 0, 0);
@@ -104,7 +115,7 @@ export function generateNeckGeometry(skeleton, options = {}) {
   positions.push(apex.x, apex.y, apex.z);
   normals.push(0, 0, 1);
   uvs.push(0.5, 1);
-  skinIndices.push(boneIndexMap['head'], boneIndexMap['head'], 0, 0);
+  skinIndices.push(boneIndexMap[headBoneName], boneIndexMap[headBoneName], 0, 0);
   skinWeights.push(1, 0, 0, 0);
   const apexIdx = positions.length / 3 - 1;
 
