@@ -13,9 +13,11 @@ export const ElephantDefinition = {
     { name: 'spine_head',  parent: 'spine_neck', position: [0, 0.1, 0.6] },
     // Head anchored slightly forward from the neck tip.
     { name: 'head',        parent: 'spine_head', position: [0, -0.15, 0.45] },
+    // Forward skull tip to anchor tusks and trunk just outside the face volume.
+    { name: 'head_tip',    parent: 'head',       position: [0, -0.05, 0.75] },
 
     // === Trunk (Chain) ===
-    { name: 'trunk_anchor', parent: 'head',        position: [0, -0.12, 1.2] },
+    { name: 'trunk_anchor', parent: 'head_tip',    position: [0, -0.07, 0.45] },
     { name: 'trunk_root',   parent: 'trunk_anchor', position: [0, -0.05, 0.4] },
     { name: 'trunk_base',   parent: 'trunk_root',   position: [0, -0.35, 0.25] },
     { name: 'trunk_mid1',  parent: 'trunk_base',  position: [0, -0.5, 0.1] },
@@ -23,10 +25,10 @@ export const ElephantDefinition = {
     { name: 'trunk_tip',   parent: 'trunk_mid2',  position: [0, -0.4, 0.0] },
 
     // === Tusks (Start -> Tip) ===
-    { name: 'tusk_left',   parent: 'head',        position: [ 0.3, -0.3, 0.4] },
+    { name: 'tusk_left',   parent: 'head_tip',    position: [ 0.3, -0.25, -0.15] },
     { name: 'tusk_left_tip', parent: 'tusk_left', position: [ 0.1, 0.3, 0.5] }, // Curve up
 
-    { name: 'tusk_right',  parent: 'head',        position: [-0.3, -0.3, 0.4] },
+    { name: 'tusk_right',  parent: 'head_tip',    position: [-0.3, -0.25, -0.15] },
     { name: 'tusk_right_tip', parent: 'tusk_right', position: [-0.1, 0.3, 0.5] },
 
     // === Ears (Start -> Tip) ===
@@ -78,6 +80,7 @@ export const ElephantDefinition = {
     spine_neck:   [1.0, 1.1, 1.0], // Thick neck base
     spine_head:   [0.9, 0.95, 0.95], // Neck tip toward the head
     head:         [0.85, 0.95, 0.9], // Large skull
+    head_tip:     [0.50, 0.55, 0.55],
 
     trunk_anchor: [0.20, 0.20, 0.20],
     trunk_root:   [0.26, 0.26, 0.26],
