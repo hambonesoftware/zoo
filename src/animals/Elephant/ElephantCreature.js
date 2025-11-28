@@ -42,7 +42,8 @@ export class ElephantCreature extends THREE.Group {
     this.add(mesh);
 
     // 4. Debug
-    if (options.debug) {
+    const showSkeleton = options.showSkeleton !== false;
+    if (showSkeleton) {
       // Use the actual root bone so the helper traverses the full skeleton
       // hierarchy, even though the skinned mesh is a sibling in the group.
       this.skeletonHelper = new THREE.SkeletonHelper(rootBone);

@@ -258,6 +258,7 @@ export class ElephantPen {
     const creatureOptions = {
       scale: elephantScale,
       debug: !!options.debugElephant,
+      showSkeleton: options.showSkeleton !== false,
       bodyColor: options.bodyColor,
       variantSeed: options.variantSeed
     };

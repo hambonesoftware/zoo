@@ -249,7 +249,8 @@ export class CatPen {
 
     this.Cat = new CatCreature({
       scale: catScale,
-      debug: !!options.debugCat
+      debug: !!options.debugCat,
+      showSkeleton: options.showSkeleton !== false
     });
 
     // Center on pad, slightly lifted so toes sit nicely on the surface.

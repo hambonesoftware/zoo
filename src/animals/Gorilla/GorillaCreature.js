@@ -22,10 +22,17 @@ export class GorillaCreature extends THREE.Group {
 
     this.add(mesh);
 
-    if (options.debug) {
-      this.skeletonHelper = new THREE.SkeletonHelper(this.mesh);
-      this.skeletonHelper.material.linewidth = 2;
-      this.skeletonHelper.material.color.set(0xffff00);
+    const showSkeleton = options.showSkeleton !== false;
+    if (showSkeleton) {
+      this.skeletonHelper = new THREE.SkeletonHelper(rootBone);
+      this.skeletonHelper.skeleton = this.skeleton;
+      this.skeletonHelper.material.linewidth = 1;
+      this.skeletonHelper.material.color.set(0x00ff66);
+      this.skeletonHelper.material.transparent = true;
+      this.skeletonHelper.material.opacity = 0.9;
+      this.skeletonHelper.material.blending = THREE.AdditiveBlending;
+      this.skeletonHelper.material.depthWrite = false;
+      this.skeletonHelper.material.toneMapped = false;
       this.add(this.skeletonHelper);
     }
 

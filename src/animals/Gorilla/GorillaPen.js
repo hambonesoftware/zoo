@@ -202,7 +202,8 @@ export class GorillaPen {
 
     this.gorilla = new GorillaCreature({
       scale: gorillaScale,
-      debug: !!options.debug
+      debug: !!options.debug,
+      showSkeleton: options.showSkeleton !== false
     });
 
     this.gorilla.position.set(0, this.padHeight, 0);
