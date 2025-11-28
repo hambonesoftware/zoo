@@ -104,7 +104,7 @@ export function createElephantSkinMaterial(options = {}) {
   const trunkForward = positionLocal.z.mul(0.6).add(0.35).clamp(0.0, 1.0);
   const trunkDown = positionLocal.y.mul(-0.6).add(0.35).clamp(0.0, 1.0);
   const trunkMask = trunkForward.mul(trunkDown);
-  const trunkColor = baseCol.mul(0.9); // darker but stays cohesive with the head
+  const trunkColor = color(0xadd8e6); // light blue for trunk accent
 
   // Legs: lighten the legs slightly toward the toes. Negative Y
   // positions correspond to the lower parts of the limbs.

@@ -257,6 +257,61 @@ export class ElephantGenerator {
       maxTrunkRadiusByHead
     );
 
+    const trunkRootBoneName = getBoneByName('trunk_anchor')
+      ? 'trunk_anchor'
+      : getBoneByName('trunk_root')
+        ? 'trunk_root'
+        : 'head';
+
+    const headClearanceRadius = headRadius + trunkBaseRadius + 0.05;
+    const headCenterInitial =
+      sampleBonePosition('head') || sampleBonePosition('head_tip') || null;
+
+    const ensureTrunkStartsOutsideHead = () => {
+      if (!headCenterInitial) {
+        return { applied: false, reason: 'head center missing' };
+      }
+
+      const trunkRootBone = getBoneByName(trunkRootBoneName);
+      const trunkRootPos = sampleBonePosition(trunkRootBoneName);
+
+      if (!trunkRootBone || !trunkRootPos) {
+        return { applied: false, reason: 'trunk root missing' };
+      }
+
+      const clearanceVector = trunkRootPos.clone().sub(headCenterInitial);
+      const clearanceDistance = clearanceVector.length();
+      const minClearance = headClearanceRadius;
+
+      if (clearanceDistance >= minClearance) {
+        return { applied: false, distance: clearanceDistance };
+      }
+
+      const direction =
+        clearanceVector.lengthSq() > 1e-6
+          ? clearanceVector.normalize()
+          : new THREE.Vector3(0, 0, 1);
+      const pushAmount = minClearance - clearanceDistance + 0.01; // small buffer
+      const offset = direction.multiplyScalar(pushAmount);
+
+      const applyOffset = (bone) => {
+        bone.position.add(offset);
+        bone.updateMatrixWorld(true);
+        bone.children.forEach(applyOffset);
+      };
+
+      applyOffset(trunkRootBone);
+      skeleton.calculateInverses();
+
+      return {
+        applied: true,
+        pushAmount,
+        newRootPosition: sampleBonePosition(trunkRootBoneName)
+      };
+    };
+
+    const trunkClearance = ensureTrunkStartsOutsideHead();
+
     if (debugVolumes) {
       const trackedBones = [
         'head',
@@ -276,8 +331,9 @@ export class ElephantGenerator {
         return acc;
       }, {});
 
-      const headCenter = positions.head || positions.head_tip || null;
-      const headSphereRadius = headRadius;
+      const headCenterLog =
+        headCenterInitial || positions.head || positions.head_tip || null;
+      const headSphereRadius = headClearanceRadius;
 
       console.log('[ElephantGenerator][debugVolumes] --- Elephant head/trunk setup ---');
       console.log(
@@ -308,11 +364,19 @@ export class ElephantGenerator {
         }
       });
 
-      if (headCenter) {
+      if (headCenterLog) {
         const headSphereMsg =
           '[ElephantGenerator][debugVolumes] head sphere center @ ' +
-          formatVector(headCenter);
+          formatVector(headCenterLog);
         console.log(headSphereMsg);
+
+        if (trunkClearance?.applied) {
+          console.log(
+            `[ElephantGenerator][debugVolumes] trunk root nudged forward by ${trunkClearance.pushAmount.toFixed(
+              3
+            )}m to clear head volume`
+          );
+        }
 
         const trunkParts = [
           'trunk_anchor',
@@ -327,7 +391,7 @@ export class ElephantGenerator {
           if (!positions[name]) {
             return;
           }
-          const dist = positions[name].distanceTo(headCenter);
+          const dist = positions[name].distanceTo(headCenterLog);
           const inside = dist < headSphereRadius;
           if (inside) {
             console.log(
@@ -358,11 +422,6 @@ export class ElephantGenerator {
     });
 
     // === 4. TRUNK (Prehensile) ===
-    const trunkRootBoneName = getBoneByName('trunk_anchor')
-      ? 'trunk_anchor'
-      : getBoneByName('trunk_root')
-        ? 'trunk_root'
-        : 'head';
     const trunkGeometry = generateTailGeometry(skeleton, {
       bones: ['trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'],
       rootBone: trunkRootBoneName,
