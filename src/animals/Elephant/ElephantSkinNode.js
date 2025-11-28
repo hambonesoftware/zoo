@@ -107,8 +107,13 @@ export function createElephantSkinMaterial(options = {}) {
   const trunkColor = color(0xadd8e6); // light blue for trunk accent
 
   // Legs: lighten the legs slightly toward the toes. Negative Y
-  // positions correspond to the lower parts of the limbs.
-  const legMask = positionLocal.y.mul(-0.8).add(0.4).clamp(0.0, 1.0);
+  // positions correspond to the lower parts of the limbs. Gate the mask
+  // to limb X/Z extents so the trunk's blue accent is not washed out by
+  // the leg blend.
+  const legHeightMask = positionLocal.y.mul(-0.8).add(0.4).clamp(0.0, 1.0);
+  const legSideMask = positionLocal.x.abs().mul(1.3).add(-0.1).clamp(0.0, 1.0);
+  const legDepthMask = positionLocal.z.abs().mul(0.85).add(-0.05).clamp(0.0, 1.0);
+  const legMask = legHeightMask.mul(legSideMask).mul(legDepthMask);
   const legColor = baseCol.mul(1.08);
 
   // Tusks: brighten tusks and reduce roughness. Tusks protrude forward
@@ -131,13 +136,13 @@ export function createElephantSkinMaterial(options = {}) {
   // (wrinkled base) and progressively lerp toward the regional colours.
   // We rely on the masks' magnitudes being modest so these blends are
   // gentle rather than hard stripes.
-  const mixTrunk = macroColor
-    .mul(float(1.0).sub(trunkMask))
-    .add(trunkColor.mul(trunkMask));
-  const mixLeg = mixTrunk
+  const mixLeg = macroColor
     .mul(float(1.0).sub(legMask))
     .add(legColor.mul(legMask));
-  const mixTusk = mixLeg
+  const mixTrunk = mixLeg
+    .mul(float(1.0).sub(trunkMask))
+    .add(trunkColor.mul(trunkMask));
+  const mixTusk = mixTrunk
     .mul(float(1.0).sub(tuskMask))
     .add(tuskColor.mul(tuskMask));
   const mixToe = mixTusk
