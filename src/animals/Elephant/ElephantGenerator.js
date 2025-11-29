@@ -205,15 +205,7 @@ export class ElephantGenerator {
     // === 2. NECK (Front torso ring -> head base) ===
     // Separate neck segment from spine_neck to head.
     const neckRadiusAtHead = 0.4 * (0.95 * headScale); // 40% of head diameter for slimmer profile
-    const neckGeometry = generateNeckGeometry(skeleton, {
-      // Use actual bones that exist in the rig: spine_neck -> head
-      bones: ['spine_neck', 'head'],
-      headBone: 'head',
-      neckTipBone: 'head',
-      radii: [neckRadiusAtHead * 1.1, neckRadiusAtHead * 0.95],
-      sides: lowPoly ? Math.max(neckSidesLowPoly, 8) : 18,
-      capBase: true
-    });
+   
 
     // === Trunk/Tusk spatial relationship ===
     const tuskLeft = getBoneByName('tusk_left');
@@ -262,7 +254,7 @@ export class ElephantGenerator {
       ? 'trunk_anchor'
       : getBoneByName('trunk_root')
         ? 'trunk_root'
-        : 'head';
+        : 'trunk_root';
 
     // === 3. HEAD ===
     const headGeometry = generateHeadGeometry(skeleton, {
@@ -284,21 +276,25 @@ export class ElephantGenerator {
     });
 
     // === 5. TUSKS (Start -> Tip) ===
-    const leftTusk = generateNoseGeometry(skeleton, {
-      bones: ['tusk_left', 'tusk_left_tip'],
-      sides: lowPoly ? tuskSidesLowPoly : 16,
-      baseRadius: 0.12,
-      tipRadius: 0.02,
-      lengthScale: tuskScale
-    });
+    // === 5. TUSKS (Start -> Tip) ===
+	const leftTusk = generateNoseGeometry(skeleton, {
+	  rootBone: 'head_tip_3',                 // NEW: left tusk root
+	  bones: ['tusk_left', 'tusk_left_tip'],
+	  sides: lowPoly ? tuskSidesLowPoly : 16,
+	  baseRadius: 0.12,
+	  tipRadius: 0.02,
+	  lengthScale: tuskScale
+	});
 
-    const rightTusk = generateNoseGeometry(skeleton, {
-      bones: ['tusk_right', 'tusk_right_tip'],
-      sides: lowPoly ? tuskSidesLowPoly : 16,
-      baseRadius: 0.12,
-      tipRadius: 0.02,
-      lengthScale: tuskScale
-    });
+	const rightTusk = generateNoseGeometry(skeleton, {
+	  rootBone: 'head_tip_4',                 // NEW: right tusk root
+	  bones: ['tusk_right', 'tusk_right_tip'],
+	  sides: lowPoly ? tuskSidesLowPoly : 16,
+	  baseRadius: 0.12,
+	  tipRadius: 0.02,
+	  lengthScale: tuskScale
+	});
+
 
     // === 6. EARS ===
     // We create a thin, sagging flap by using a limb generator, then
@@ -326,13 +322,15 @@ export class ElephantGenerator {
     leftEar.computeVertexNormals();
     rightEar.computeVertexNormals();
 
-    // === 7. TAIL ===
-    const tailGeometry = generateTailGeometry(skeleton, {
-      bones: ['tail_base', 'tail_mid', 'tail_tip'],
-      sides: lowPoly ? tailSidesLowPoly : 14,
-      baseRadius: 0.15,
-      tipRadius: 0.05
-    });
+	// === 7. TAIL ===
+	const tailGeometry = generateTailGeometry(skeleton, {
+	  rootBone: 'spine_tail',                 // NEW: tail is anchored at the rump cap center
+	  bones: ['tail_base', 'tail_mid', 'tail_tip'],
+	  sides: lowPoly ? tailSidesLowPoly : 14,
+	  baseRadius: 0.15,
+	  tipRadius: 0.05
+	});
+
 
     // === 8. LEGS (Pillars) ===
     const legConfig = {
@@ -464,7 +462,6 @@ export class ElephantGenerator {
     const mergedGeometry = mergeGeometries(
       [
         torsoGeometry,
-        neckGeometry,
         headGeometry,
         trunkGeometry,
         leftTusk,

@@ -6,19 +6,23 @@ export const ElephantDefinition = {
     // spine_base = Hips. High up.
     { name: 'spine_base',  parent: 'root',       position: [0, 2.1, 0] }, 
     // spine_mid = Ribcage. Lower and forward.
+	{ name: 'spine_tail',  parent: 'spine_base',       position: [0,-.5, -.35] }, 
+    // spine_mid = Ribcage. Lower and forward.
     { name: 'spine_mid',   parent: 'spine_base', position: [0, -0.1, 1.1] },
     // spine_neck = Shoulder hump.
-    { name: 'spine_neck',  parent: 'spine_mid',  position: [0, 0.3, 0.9] },
+    { name: 'spine_neck',  parent: 'spine_mid',  position: [0, 0.3, 1.1] },
     // spine_head stretches forward to give the neck visible length.
     { name: 'spine_head',  parent: 'spine_neck', position: [0, 0.1, 0.6] },
     // Head anchored slightly forward from the neck tip.
     { name: 'head',        parent: 'spine_head', position: [0, -0.15, 0.45] },
     // Forward skull tip split into two segments for extra pitch control.
-    { name: 'head_tip_1',  parent: 'head',       position: [0, -0.05, 0.75] },
+    { name: 'head_tip_1',  parent: 'head',       position: [0, -0.05, 0.05] },
     { name: 'head_tip_2',  parent: 'head_tip_1', position: [0, 0, 0], rotation: [-0.1745329, 0, 0] }, // -10° down
+	{ name: 'head_tip_3',  parent: 'head_tip_1', position: [.3, 0, 0], rotation: [-0.1745329, 0, 0] },
+	{ name: 'head_tip_4',  parent: 'head_tip_1', position: [-.3, 0, 0], rotation: [-0.1745329, 0, 0] },
 
     // === Trunk (Chain) ===
-    { name: 'trunk_anchor', parent: 'head_tip_2',  position: [0, -0.07, 0.45] },
+    { name: 'trunk_anchor', parent: 'head_tip_2',  position: [0, -0.07, 0.15] },
     { name: 'trunk_root',   parent: 'trunk_anchor', position: [0, -0.05, 0.4] },
     { name: 'trunk_base',   parent: 'trunk_root',   position: [0, -0.35, 0.25] },
     { name: 'trunk_mid1',  parent: 'trunk_base',  position: [0, -0.5, 0.1] },
@@ -26,10 +30,10 @@ export const ElephantDefinition = {
     { name: 'trunk_tip',   parent: 'trunk_mid2',  position: [0, -0.4, 0.0] },
 
     // === Tusks (Start -> Tip) ===
-    { name: 'tusk_left',   parent: 'head_tip_2',  position: [ 0.3, -0.25, -0.15] },
+    { name: 'tusk_left',   parent: 'head_tip_3',  position: [ 0.0, 0, .25] },
     { name: 'tusk_left_tip', parent: 'tusk_left', position: [ 0.1, 0.3, 0.5] }, // Curve up
 
-    { name: 'tusk_right',  parent: 'head_tip_2',  position: [-0.3, -0.25, -0.15] },
+    { name: 'tusk_right',  parent: 'head_tip_4',  position: [0, 0, 0.25] },
     { name: 'tusk_right_tip', parent: 'tusk_right', position: [-0.1, 0.3, 0.5] },
 
     // === Ears (Start -> Tip) ===
@@ -39,8 +43,8 @@ export const ElephantDefinition = {
     { name: 'ear_right',   parent: 'head',        position: [-0.4, 0.1, -0.5] },
     { name: 'ear_right_tip', parent: 'ear_right', position: [-0.6, -0.6, -0.4] },
 
-    // === Tail ===
-    { name: 'tail_base',   parent: 'spine_base', position: [0, 0.3, -0.3] },
+    // === ` ===
+    { name: 'tail_base',   parent: 'spine_tail', position: [0, 0.3, -0.3] },
     { name: 'tail_mid',    parent: 'tail_base',  position: [0, -0.6, -0.2] }, 
     { name: 'tail_tip',    parent: 'tail_mid',   position: [0, -0.6, 0.0] },
 
@@ -78,7 +82,7 @@ export const ElephantDefinition = {
     // We increase these to simulate the width of hips/shoulders
     spine_base:   [1.1, 1.1, 1.2], // Huge rump
     spine_mid:    [1.25, 1.35, 1.3], // Huge barrel chest
-    spine_neck:   [1.0, 1.1, 1.0], // Thick neck base
+    spine_neck:   [0.01, 0.1, .2], // Thick neck base
     spine_head:   [0.9, 0.95, 0.95], // Neck tip toward the head
     head:         [0.85, 0.95, 0.9], // Large skull
     head_tip_1:   [0.50, 0.55, 0.55],
@@ -101,6 +105,7 @@ export const ElephantDefinition = {
     ear_right:     [0.7, 0.7, 0.1],
     ear_right_tip: [0.6, 0.6, 0.1],
 
+	spine_tail:    [0.15, 0.15, 0.30],
     tail_base:    [0.15, 0.15, 0.30],
     tail_mid:     [0.08, 0.08, 0.30],
     tail_tip:     [0.06, 0.06, 0.20],
