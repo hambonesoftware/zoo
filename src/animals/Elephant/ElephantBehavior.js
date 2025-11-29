@@ -22,6 +22,9 @@ export class ElephantBehavior {
     this.mesh = mesh;
     this.time = 0;
 
+    // Environment config (enclosure/pond). Passed in from ElephantPen.
+    this.environment = null;
+
     // High-level state: 'idle', 'walk', etc.
     this.state = 'idle';
 
@@ -38,6 +41,23 @@ export class ElephantBehavior {
     this.debug = {
       enabled: !!opts.debug
     };
+  }
+
+  /**
+   * Configure environment data such as enclosure radius and pond location.
+   * Propagates to locomotion and defaults the elephant into a wandering state
+   * once the world is known.
+   */
+  configureEnvironment(env) {
+    this.environment = env || null;
+
+    if (this.locomotion && typeof this.locomotion.setEnvironment === 'function') {
+      this.locomotion.setEnvironment(env);
+    }
+
+    if (this.locomotion && this.state === 'idle') {
+      this.locomotion.setState('wander');
+    }
   }
 
   /**

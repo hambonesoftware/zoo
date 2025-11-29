@@ -24,10 +24,10 @@ import * as THREE from 'three';
  */
 export class ElephantLocomotion {
   constructor(elephant) {
-    this.elephant = elephant;    
+    this.elephant = elephant;
 
     // Finite state machine for high-level motion: idle, walking, curiosity, etc.
-    this.state = 'idle';   // 'idle' | 'walk' | 'curious' | 'wander'
+    this.state = 'idle';   // 'idle' | 'walk' | 'curious' | 'wander' | 'drink' | 'excited'
 
     // Walk cycle phase: 0..1 (or 0..2π in radians) for the stepping pattern
     this.gaitPhase = 0;
@@ -44,6 +44,29 @@ export class ElephantLocomotion {
 
     // Simple 'wander' heading these elephants walk in, if desired
     this.direction = new THREE.Vector3(0, 0, 1);
+
+    // Environment / enclosure settings
+    this.environment = null;
+    this.enclosureCenter = new THREE.Vector3();
+    this.enclosureRadius = 8.0;
+    this.pondCenter = new THREE.Vector3();
+    this.pondRadius = 1.4;
+    this.boundarySoftRadius = 0.75; // fraction of enclosure at which to steer back
+
+    // Drinking behaviour timers
+    this.lastDrinkTime = -Infinity;
+    this.drinkCooldown = 25; // seconds between drinks
+    this.drinkDuration = 6.0;
+    this.drinkApproachDistance = 0.8; // how close to get to pond edge before posing
+
+    // Excited behaviour timers
+    this.lastExcitedTime = -Infinity;
+    this.excitedCooldown = 14; // minimum seconds between excited bursts
+    this.excitedDuration = 3.5;
+    this.excitedChance = 0.12; // probability over cooldown window to trigger
+
+    // Global time tracker
+    this._time = 0;
 
     // Reusable temp vector
     this.tempVec = new THREE.Vector3();
@@ -65,6 +88,17 @@ export class ElephantLocomotion {
     };
   }
 
+  setEnvironment(env) {
+    this.environment = env || null;
+
+    if (!env) return;
+
+    if (env.enclosureCenter) this.enclosureCenter.copy(env.enclosureCenter);
+    if (typeof env.enclosureRadius === 'number') this.enclosureRadius = env.enclosureRadius;
+    if (env.pondCenter) this.pondCenter.copy(env.pondCenter);
+    if (typeof env.pondRadius === 'number') this.pondRadius = env.pondRadius;
+  }
+
   /**
    * Main update entry. Call once per frame with dt (seconds).
    */
@@ -78,11 +112,18 @@ export class ElephantLocomotion {
     if (!root || !mesh) return;
 
     // Advance time
+    this._time += dt;
     this._idleTime += dt;
     this._stateTime += dt;
 
+    // Consider spontaneous state changes (excited/drink) when roaming
+    if (this.state !== 'drink' && this.state !== 'excited') {
+      this.maybeTriggerExcitement(dt);
+      this.maybeTriggerDrink(root);
+    }
+
     // Lerp walkBlend toward 1 if walking, otherwise toward 0
-    const walkTarget = (this.state === 'walk' || this.state === 'wander') ? 1 : 0;
+    const walkTarget = (this.state === 'walk' || this.state === 'wander' || this.state === 'drink') ? 1 : 0;
     this.walkBlend = THREE.MathUtils.damp(this.walkBlend, walkTarget, 2.5, dt);
 
     // Lerp curiosity blend similarly (for 'curious' state)
@@ -99,6 +140,12 @@ export class ElephantLocomotion {
     switch (this.state) {
       case 'wander':
         this.updateWander(dt, root, mesh, bones);
+        break;
+      case 'drink':
+        this.updateDrink(dt, root, mesh, bones);
+        break;
+      case 'excited':
+        this.updateExcited(dt, root, mesh, bones);
         break;
       case 'curious':
         this.updateCurious(dt, root, bones);
@@ -124,6 +171,17 @@ export class ElephantLocomotion {
     this.state = newState;
     // Reset state timers or blends if necessary
     this._stateTime = 0;
+
+    if (newState === 'drink') {
+      this.lastDrinkTime = this._time;
+    }
+    if (newState === 'excited') {
+      this.lastExcitedTime = this._time;
+    }
+
+    if (this.elephant && typeof this.elephant.setState === 'function') {
+      this.elephant.setState(newState);
+    }
   }
 
   /**
@@ -131,6 +189,33 @@ export class ElephantLocomotion {
    */
   getState() {
     return this.state;
+  }
+
+  maybeTriggerDrink(root) {
+    if (!this.environment) return;
+
+    const timeSinceDrink = this._time - this.lastDrinkTime;
+    if (timeSinceDrink < this.drinkCooldown) return;
+
+    this.tempVec.copy(root.position).sub(this.pondCenter);
+    this.tempVec.y = 0;
+    const distance = this.tempVec.length();
+    const drinkZone = this.pondRadius + 2.2;
+
+    if (distance < drinkZone) {
+      this.setState('drink');
+    }
+  }
+
+  maybeTriggerExcitement(dt = 0) {
+    const timeSinceExcited = this._time - this.lastExcitedTime;
+    if (timeSinceExcited < this.excitedCooldown) return;
+
+    // Small random chance each second once cooldown elapsed
+    const perFrameChance = (this.excitedChance / this.excitedCooldown) * Math.max(dt, 0.016);
+    if (Math.random() < perFrameChance) {
+      this.setState('excited');
+    }
   }
 
   // -----------------------------
@@ -146,12 +231,39 @@ export class ElephantLocomotion {
     const turnSpeed = 0.4; // rad/s for wandering
     const noise = (Math.random() - 0.5) * 0.3; // some randomness
     const turnAngle = turnSpeed * dt * noise;
-    this.rotateDirection(turnAngle);
 
-    // Move root along direction
+    // Boundary steering
+    const rel = this.tempVec.copy(root.position).sub(this.enclosureCenter);
+    rel.y = 0;
+    const distanceFromCenter = rel.length();
+    const softBoundary = this.enclosureRadius * this.boundarySoftRadius;
+    if (distanceFromCenter > softBoundary) {
+      // Look back toward center gently
+      const desired = rel.clone().multiplyScalar(-1);
+      desired.normalize();
+      this.turnToward(desired, dt);
+    } else {
+      this.rotateDirection(turnAngle);
+    }
+
+    // Move root along direction while keeping within enclosure radius
     const forwardSpeed = this.walkSpeed * 0.7;
     this.tempVec.copy(this.direction).multiplyScalar(forwardSpeed * dt);
     root.position.add(this.tempVec);
+
+    const afterMove = this.tempVec.copy(root.position).sub(this.enclosureCenter);
+    afterMove.y = 0;
+    const distAfter = afterMove.length();
+    if (distAfter > this.enclosureRadius) {
+      afterMove.setLength(this.enclosureRadius - 0.1);
+      root.position.set(
+        this.enclosureCenter.x + afterMove.x,
+        root.position.y,
+        this.enclosureCenter.z + afterMove.z
+      );
+      // turn back toward centre on next frame
+      this.turnToward(afterMove.clone().multiplyScalar(-1).normalize(), dt);
+    }
 
     // Body bobbing
     const time = this._idleTime * 1.4;
@@ -170,6 +282,116 @@ export class ElephantLocomotion {
     // Trunk & ears sway according to walk
     this.applyTrunkWalk(bones, this._idleTime, this.gaitPhase);
     this.applyEarWalk(bones, this._idleTime, this.gaitPhase);
+  }
+
+  updateDrink(dt, root, mesh, bones) {
+    const approach = this.tempVec.copy(this.pondCenter).sub(root.position);
+    approach.y = 0;
+    const distance = approach.length();
+    if (distance > 0.0001) {
+      approach.normalize();
+      this.turnToward(approach, dt);
+    }
+
+    // Approach the pond until close enough
+    const targetDist = this.pondRadius + this.drinkApproachDistance;
+    if (distance > targetDist) {
+      const speed = this.walkSpeed * 0.55;
+      this.tempVec.copy(this.direction).multiplyScalar(speed * dt);
+      root.position.add(this.tempVec);
+
+      const bob = Math.sin((this._idleTime + this.gaitPhase * Math.PI * 2) * 2.0) * 0.04;
+      root.position.y = this.baseHeight + bob;
+      root.rotation.x = -0.05;
+
+      this.applyLegWalk(bones, this.gaitPhase);
+      this.applyTrunkWalk(bones, this._idleTime, this.gaitPhase * 0.5);
+      this.applyEarWalk(bones, this._idleTime, this.gaitPhase * 0.5);
+      return;
+    }
+
+    // Drinking pose
+    const settle = Math.min(1, this._stateTime / 1.2);
+    const head = bones['head'];
+    const neck = bones['spine_neck'];
+    const trunkBase = bones['trunk_base'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
+    const trunkTip = bones['trunk_tip'];
+
+    root.position.y = this.baseHeight - 0.08 * settle;
+    root.rotation.x = -0.2 * settle;
+
+    this.applyLegIdle(bones, this._idleTime * 0.5);
+
+    if (neck) neck.rotation.x = -0.45 * settle;
+    if (head) head.rotation.x = -0.25 * settle;
+
+    const trunkDip = -0.8 * settle;
+    if (trunkBase) trunkBase.rotation.x = trunkDip * 0.3;
+    if (trunkMid1) trunkMid1.rotation.x = trunkDip * 0.6;
+    if (trunkMid2) trunkMid2.rotation.x = trunkDip * 0.9;
+    if (trunkTip) {
+      trunkTip.rotation.x = trunkDip * 1.2;
+      trunkTip.rotation.y = Math.sin(this._stateTime * 1.8) * 0.05;
+    }
+
+    // Gentle ear flare while paused
+    const earLeft = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    const flare = 0.18 * settle;
+    if (earLeft) earLeft.rotation.y = flare;
+    if (earRight) earRight.rotation.y = -flare;
+
+    if (this._stateTime > this.drinkDuration) {
+      this.setState('wander');
+    }
+  }
+
+  updateExcited(dt, root, mesh, bones) {
+    const t = this._stateTime;
+    const bounce = Math.sin(t * 6.0) * 0.08;
+    root.position.y = this.baseHeight + 0.18 + bounce;
+    root.rotation.x = Math.sin(t * 4.0) * 0.1;
+    root.rotation.z = Math.sin(t * 5.0) * 0.08;
+
+    const head = bones['head'];
+    const neck = bones['spine_neck'];
+    const trunkBase = bones['trunk_base'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
+    const trunkTip = bones['trunk_tip'];
+    const earLeft = bones['ear_left'];
+    const earRight = bones['ear_right'];
+
+    if (neck) neck.rotation.x = -0.25;
+    if (head) {
+      head.rotation.x = -0.2;
+      head.rotation.y = Math.sin(t * 3.0) * 0.25;
+    }
+
+    const wave = Math.sin(t * 5.5) * 0.5;
+    const lift = -0.9;
+    if (trunkBase) trunkBase.rotation.x = lift * 0.25;
+    if (trunkMid1) trunkMid1.rotation.x = lift * 0.5;
+    if (trunkMid2) {
+      trunkMid2.rotation.x = lift * 0.8;
+      trunkMid2.rotation.y = wave * 0.4;
+    }
+    if (trunkTip) {
+      trunkTip.rotation.x = lift * 1.0;
+      trunkTip.rotation.y = wave * 0.6;
+    }
+
+    const flare = 0.3 + Math.sin(t * 7.0) * 0.1;
+    if (earLeft) earLeft.rotation.y = flare;
+    if (earRight) earRight.rotation.y = -flare;
+
+    this.applyLegIdle(bones, this._idleTime * 1.8);
+
+    if (this._stateTime > this.excitedDuration) {
+      this.setState('wander');
+    }
   }
 
   rotateDirection(angle) {
