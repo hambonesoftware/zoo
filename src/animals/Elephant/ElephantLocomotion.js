@@ -12,22 +12,22 @@ import * as THREE from 'three';
  * - Soft idle breathing with subtle trunk/ear motion
  *
  * Expected bone keys (any missing ones are safely ignored):
- * - 'spine_base' (root / hips)
- * - 'spine_mid', 'spine_neck', 'head'
- * - 'leg_front_L_upper', 'leg_front_L_lower'
- * - 'leg_front_R_upper', 'leg_front_R_lower'
- * - 'leg_back_L_upper', 'leg_back_L_lower'
- * - 'leg_back_R_upper', 'leg_back_R_lower'
- * - 'trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'
- * - 'ear_left', 'ear_right'
- * - 'tail_base', 'tail_mid', 'tail_tip'
- */
-export class ElephantLocomotion {
+  * - 'spine_base' (root / hips)
+  * - 'spine_mid', 'spine_neck', 'head'
+  * - 'front_left_upper', 'front_left_lower', 'front_left_foot'
+  * - 'front_right_upper', 'front_right_lower', 'front_right_foot'
+  * - 'back_left_upper', 'back_left_lower', 'back_left_foot'
+  * - 'back_right_upper', 'back_right_lower', 'back_right_foot'
+  * - 'trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'
+  * - 'ear_left', 'ear_right'
+  * - 'tail_base', 'tail_mid', 'tail_tip'
+  */
+  export class ElephantLocomotion {
   constructor(elephant) {
     this.elephant = elephant;    
 
     // Finite state machine for high-level motion: idle, walking, curiosity, etc.
-    this.state = 'idle';   // 'idle' | 'walk' | 'curious' | 'wander'
+    this.state = 'idle';   // 'idle' | 'walk' | 'curious' | 'wander' | 'drink' | 'excited'
 
     // Walk cycle phase: 0..1 (or 0..2π in radians) for the stepping pattern
     this.gaitPhase = 0;
@@ -44,6 +44,9 @@ export class ElephantLocomotion {
 
     // Simple 'wander' heading these elephants walk in, if desired
     this.direction = new THREE.Vector3(0, 0, 1);
+
+    // Target position for drinking behavior (XZ plane)
+    this.drinkTarget = null;
 
     // Reusable temp vector
     this.tempVec = new THREE.Vector3();
@@ -82,7 +85,10 @@ export class ElephantLocomotion {
     this._stateTime += dt;
 
     // Lerp walkBlend toward 1 if walking, otherwise toward 0
-    const walkTarget = (this.state === 'walk' || this.state === 'wander') ? 1 : 0;
+    const walkingStates = ['walk', 'wander', 'drink', 'excited'];
+    const walkTarget = walkingStates.includes(this.state)
+      ? (this.state === 'excited' ? 0.65 : 1)
+      : 0;
     this.walkBlend = THREE.MathUtils.damp(this.walkBlend, walkTarget, 2.5, dt);
 
     // Lerp curiosity blend similarly (for 'curious' state)
@@ -91,7 +97,8 @@ export class ElephantLocomotion {
 
     // Gait phase: only advance when walking/wandering
     if (this.walkBlend > 0.001) {
-      const phaseSpeed = this.walkSpeed * 1.3; // scales stepping frequency
+      const speedMultiplier = this.state === 'excited' ? 2.0 : this.state === 'drink' ? 1.0 : 1.3;
+      const phaseSpeed = this.walkSpeed * speedMultiplier; // scales stepping frequency
       this.gaitPhase = (this.gaitPhase + dt * phaseSpeed) % 1.0;
     }
 
@@ -99,6 +106,12 @@ export class ElephantLocomotion {
     switch (this.state) {
       case 'wander':
         this.updateWander(dt, root, mesh, bones);
+        break;
+      case 'drink':
+        this.updateDrink(dt, root, mesh, bones);
+        break;
+      case 'excited':
+        this.updateExcited(dt, root, mesh, bones);
         break;
       case 'curious':
         this.updateCurious(dt, root, bones);
@@ -124,6 +137,18 @@ export class ElephantLocomotion {
     this.state = newState;
     // Reset state timers or blends if necessary
     this._stateTime = 0;
+  }
+
+  /**
+   * Queue a target position (Vector3 or {x,y,z}) for the drink state.
+   */
+  setDrinkTarget(target) {
+    if (!target) {
+      this.drinkTarget = null;
+      return;
+    }
+    const t = target.isVector3 ? target : new THREE.Vector3(target.x, target.y || 0, target.z);
+    this.drinkTarget = t.clone();
   }
 
   /**
@@ -170,6 +195,103 @@ export class ElephantLocomotion {
     // Trunk & ears sway according to walk
     this.applyTrunkWalk(bones, this._idleTime, this.gaitPhase);
     this.applyEarWalk(bones, this._idleTime, this.gaitPhase);
+  }
+
+  // -----------------------------
+  // DRINK STATE
+  // -----------------------------
+
+  /**
+   * Drink: the elephant walks toward a water target (if provided), lowers
+   * its head and trunk toward the ground, and curls the trunk tip.
+   */
+  updateDrink(dt, root, mesh, bones) {
+    const TWO_PI = Math.PI * 2;
+
+    const t = this._idleTime;
+    let sipBlend = 0.7;
+
+    // Approach drink target if set
+    if (this.drinkTarget) {
+      this.tempVec.copy(this.drinkTarget);
+      this.tempVec.y = root.position.y;
+      this.tempVec.sub(root.position);
+
+      const dist = this.tempVec.length();
+      if (dist > 0.001) {
+        this.tempVec.multiplyScalar(1 / dist);
+        // Turn toward the target direction on XZ
+        this.turnToward(this.tempVec.clone().setY(0), dt);
+
+        const approachSpeed = this.walkSpeed * 0.55 * this.walkBlend;
+        const step = Math.min(dist, approachSpeed * dt);
+        root.position.addScaledVector(this.tempVec, step);
+        sipBlend = Math.min(1, Math.max(0.3, 1 - dist));
+      } else {
+        sipBlend = 1;
+      }
+    }
+
+    // Lower the body slightly while drinking
+    const bob = Math.sin((this.gaitPhase * TWO_PI) * 1.5 + t) * 0.04 * this.walkBlend;
+    root.position.y = this.baseHeight - 0.08 + bob;
+
+    // Forward lean into the sip
+    const leanForward = -0.25 * sipBlend + Math.sin(this.gaitPhase * TWO_PI) * 0.05 * this.walkBlend;
+    const roll = Math.sin(this.gaitPhase * TWO_PI * 2) * 0.03 * this.walkBlend;
+    root.rotation.x = leanForward;
+    root.rotation.z = roll;
+
+    // Legs follow a slower, cautious gait
+    this.applyLegWalk(bones, this.gaitPhase);
+
+    // Head/neck down toward the water
+    const neck = bones['spine_neck'];
+    const head = bones['head'];
+    if (neck) neck.rotation.x = -0.22 * sipBlend;
+    if (head) head.rotation.x = -0.35 * sipBlend;
+
+    // Trunk curls to sip
+    this.applyTrunkDrink(bones, t, sipBlend);
+
+    // Gentle ears while drinking
+    this.applyEarIdle(bones, t * 1.2);
+  }
+
+  // -----------------------------
+  // EXCITED STATE
+  // -----------------------------
+
+  /**
+   * Excited: playful bounce, lifted head/trunk, rapid ear flaps and quick steps.
+   */
+  updateExcited(dt, root, mesh, bones) {
+    const t = this._stateTime;
+
+    const bounce = Math.sin(t * 6.0) * 0.12 * this.walkBlend + 0.05;
+    root.position.y = this.baseHeight + bounce;
+
+    // Small in-place shuffle
+    const shuffleRadius = 0.05;
+    root.position.x += Math.cos(t * 3.2) * shuffleRadius * dt;
+    root.position.z += Math.sin(t * 2.8) * shuffleRadius * dt;
+
+    // Energetic forward lean and roll
+    root.rotation.x = 0.12 * Math.sin(t * 4.0);
+    root.rotation.z = 0.1 * Math.sin(t * 5.0);
+
+    // Faster gait cycling for stepping-in-place hops
+    this.applyLegWalk(bones, this.gaitPhase);
+
+    // Lift head/trunk
+    const neck = bones['spine_neck'];
+    const head = bones['head'];
+    if (neck) neck.rotation.x = 0.12;
+    if (head) head.rotation.x = 0.18;
+    this.applyTrunkExcited(bones, t);
+
+    // Faster ear flaps and tail swish
+    this.applyEarExcited(bones, t);
   }
 
   rotateDirection(angle) {
@@ -353,28 +475,36 @@ export class ElephantLocomotion {
    * Basic idle leg pose with subtle micro-motion.
    */
   applyLegIdle(bones, t) {
-    const legFLU = bones['leg_front_L_upper'];
-    const legFLL = bones['leg_front_L_lower'];
-    const legFRU = bones['leg_front_R_upper'];
-    const legFRL = bones['leg_front_R_lower'];
-    const legBLU = bones['leg_back_L_upper'];
-    const legBLL = bones['leg_back_L_lower'];
-    const legBRU = bones['leg_back_R_upper'];
-    const legBRL = bones['leg_back_R_lower'];
+    const legFLU = bones['front_left_upper'];
+    const legFLL = bones['front_left_lower'];
+    const legFLF = bones['front_left_foot'];
+    const legFRU = bones['front_right_upper'];
+    const legFRL = bones['front_right_lower'];
+    const legFRF = bones['front_right_foot'];
+    const legBLU = bones['back_left_upper'];
+    const legBLL = bones['back_left_lower'];
+    const legBLF = bones['back_left_foot'];
+    const legBRU = bones['back_right_upper'];
+    const legBRL = bones['back_right_lower'];
+    const legBRF = bones['back_right_foot'];
 
     const micro = Math.sin(t * 1.5) * 0.05;
 
     if (legFLU) legFLU.rotation.x = 0.05 + micro * 0.4;
     if (legFLL) legFLL.rotation.x = -0.05 + micro * 0.4;
+    if (legFLF) legFLF.rotation.x = 0.02 - micro * 0.2;
 
     if (legFRU) legFRU.rotation.x = 0.02 - micro * 0.3;
     if (legFRL) legFRL.rotation.x = -0.02 - micro * 0.3;
+    if (legFRF) legFRF.rotation.x = 0.01 + micro * 0.15;
 
     if (legBLU) legBLU.rotation.x = -0.03 + micro * 0.5;
     if (legBLL) legBLL.rotation.x = 0.03 + micro * 0.4;
+    if (legBLF) legBLF.rotation.x = -0.01 + micro * 0.1;
 
     if (legBRU) legBRU.rotation.x = -0.05 - micro * 0.5;
     if (legBRL) legBRL.rotation.x = 0.05 - micro * 0.4;
+    if (legBRF) legBRF.rotation.x = 0.0 - micro * 0.05;
   }
 
   /**
@@ -472,14 +602,18 @@ export class ElephantLocomotion {
   applyLegWalk(bones, phase) {
     const TWO_PI = Math.PI * 2;
 
-    const legFLU = bones['leg_front_L_upper'];
-    const legFLL = bones['leg_front_L_lower'];
-    const legFRU = bones['leg_front_R_upper'];
-    const legFRL = bones['leg_front_R_lower'];
-    const legBLU = bones['leg_back_L_upper'];
-    const legBLL = bones['leg_back_L_lower'];
-    const legBRU = bones['leg_back_R_upper'];
-    const legBRL = bones['leg_back_R_lower'];
+    const legFLU = bones['front_left_upper'];
+    const legFLL = bones['front_left_lower'];
+    const legFLF = bones['front_left_foot'];
+    const legFRU = bones['front_right_upper'];
+    const legFRL = bones['front_right_lower'];
+    const legFRF = bones['front_right_foot'];
+    const legBLU = bones['back_left_upper'];
+    const legBLL = bones['back_left_lower'];
+    const legBLF = bones['back_left_foot'];
+    const legBRU = bones['back_right_upper'];
+    const legBRL = bones['back_right_lower'];
+    const legBRF = bones['back_right_foot'];
 
     const amplitudeFront = 0.55;
     const amplitudeBack  = 0.65;
@@ -497,18 +631,22 @@ export class ElephantLocomotion {
     // Front Left
     if (legFLU) legFLU.rotation.x = swing(phaseFL, amplitudeFront) * 0.9;
     if (legFLL) legFLL.rotation.x = knee(phaseFL, kneeBendFactor);
+    if (legFLF) legFLF.rotation.x = -knee(phaseFL, kneeBendFactor * 0.6);
 
     // Back Left
     if (legBLU) legBLU.rotation.x = swing(phaseBL, amplitudeBack);
     if (legBLL) legBLL.rotation.x = knee(phaseBL, kneeBendFactor * 1.1);
+    if (legBLF) legBLF.rotation.x = -knee(phaseBL, kneeBendFactor * 0.65);
 
     // Front Right
     if (legFRU) legFRU.rotation.x = swing(phaseFR, amplitudeFront);
     if (legFRL) legFRL.rotation.x = knee(phaseFR, kneeBendFactor);
+    if (legFRF) legFRF.rotation.x = -knee(phaseFR, kneeBendFactor * 0.6);
 
     // Back Right
     if (legBRU) legBRU.rotation.x = swing(phaseBR, amplitudeBack) * 1.1;
     if (legBRL) legBRL.rotation.x = knee(phaseBR, kneeBendFactor * 1.05);
+    if (legBRF) legBRF.rotation.x = -knee(phaseBR, kneeBendFactor * 0.65);
   }
 
   /**
@@ -542,6 +680,33 @@ export class ElephantLocomotion {
     }
   }
 
+  applyTrunkDrink(bones, t, sipBlend) {
+    const trunkBase = bones['trunk_base'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
+    const trunkTip = bones['trunk_tip'];
+
+    const sway = Math.sin(t * 1.0) * 0.15;
+    const dip = -0.6 * sipBlend;
+
+    if (trunkBase) {
+      trunkBase.rotation.y = sway * 0.3;
+      trunkBase.rotation.x = dip * 0.3;
+    }
+    if (trunkMid1) {
+      trunkMid1.rotation.y = sway * 0.35;
+      trunkMid1.rotation.x = dip * 0.55;
+    }
+    if (trunkMid2) {
+      trunkMid2.rotation.y = sway * 0.45;
+      trunkMid2.rotation.x = dip * 0.75;
+    }
+    if (trunkTip) {
+      trunkTip.rotation.y = sway * 0.5;
+      trunkTip.rotation.x = dip * 0.95 - 0.25 * sipBlend; // curl tip
+    }
+  }
+
   applyEarWalk(bones, t, phase) {
     const earLeft = bones['ear_left'];
     const earRight = bones['ear_right'];
@@ -559,6 +724,49 @@ export class ElephantLocomotion {
     }
     if (earRight) {
       earRight.rotation.y = -totalRight;
+    }
+  }
+
+  applyTrunkExcited(bones, t) {
+    const trunkBase = bones['trunk_base'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
+    const trunkTip = bones['trunk_tip'];
+
+    const sway = Math.sin(t * 3.0) * 0.6;
+    const lift = 0.35 + Math.sin(t * 2.2) * 0.2;
+
+    if (trunkBase) {
+      trunkBase.rotation.y = sway * 0.3;
+      trunkBase.rotation.x = lift * 0.4;
+    }
+    if (trunkMid1) {
+      trunkMid1.rotation.y = sway * 0.45;
+      trunkMid1.rotation.x = lift * 0.65;
+    }
+    if (trunkMid2) {
+      trunkMid2.rotation.y = sway * 0.55;
+      trunkMid2.rotation.x = lift * 0.85;
+    }
+    if (trunkTip) {
+      trunkTip.rotation.y = sway * 0.7;
+      trunkTip.rotation.x = lift * 1.05;
+    }
+  }
+
+  applyEarExcited(bones, t) {
+    const earLeft = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    if (!earLeft && !earRight) return;
+
+    const fastFlap = Math.sin(t * 8.0) * 0.35;
+    const offset = Math.sin(t * 4.0) * 0.12;
+
+    if (earLeft) {
+      earLeft.rotation.y = fastFlap + offset;
+    }
+    if (earRight) {
+      earRight.rotation.y = -(fastFlap + offset * 0.9);
     }
   }
 
