@@ -21,6 +21,32 @@ export function createElephantSkinMaterial(options = {}) {
   const baseColorHex =
     options.bodyColor !== undefined ? options.bodyColor : 0x999b9f;
 
+  // WebGPU-only node materials become invisible when the renderer falls back to
+  // WebGL (common on machines without WebGPU). Detect support and provide a
+  // standard MeshStandardMaterial so the elephant still renders even though we
+  // lose the TSL-driven wrinkle layering.
+  const supportsWebGPU = typeof navigator !== 'undefined' && !!navigator.gpu;
+  const useNodeMaterial = options.forceNodeMaterial ?? supportsWebGPU;
+
+  if (!useNodeMaterial) {
+    const fallbackMaterial = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(baseColorHex),
+      map: elephantSkinCanvasTexture,
+      roughness: 0.9,
+      metalness: 0.02,
+      skinning: true,
+      emissive: new THREE.Color(0x222222),
+      emissiveIntensity: 0.35
+    });
+
+    if (options.lowPoly === true || options.flatShading === true) {
+      fallbackMaterial.flatShading = true;
+      fallbackMaterial.needsUpdate = true;
+    }
+
+    return fallbackMaterial;
+  }
+
   const material = new MeshStandardNodeMaterial();
   material.skinning = true; // Enable skinning for the SkinnedMesh
 
