@@ -111,6 +111,9 @@ export class ElephantLocomotion {
 
     if (!root || !mesh) return;
 
+    // Enforce forward/back heading along local Z
+    this.clampDirectionToZAxis();
+
     // Advance time
     this._time += dt;
     this._idleTime += dt;
@@ -243,13 +246,17 @@ export class ElephantLocomotion {
       desired.normalize();
       this.turnToward(desired, dt);
     } else {
-      this.rotateDirection(turnAngle);
+      // Occasionally flip to roam forward/back without lateral strafing
+      if (Math.random() < Math.abs(turnAngle) * 0.5) {
+        this.direction.z *= -1;
+      }
+      this.clampDirectionToZAxis();
     }
 
     // Move root along direction while keeping within enclosure radius
     const forwardSpeed = this.walkSpeed * 0.7;
-    this.tempVec.copy(this.direction).multiplyScalar(forwardSpeed * dt);
-    root.position.add(this.tempVec);
+    const forwardStep = (this.direction.z === 0 ? 1 : Math.sign(this.direction.z)) * forwardSpeed * dt;
+    root.position.z += forwardStep;
 
     const afterMove = this.tempVec.copy(root.position).sub(this.enclosureCenter);
     afterMove.y = 0;
@@ -297,8 +304,8 @@ export class ElephantLocomotion {
     const targetDist = this.pondRadius + this.drinkApproachDistance;
     if (distance > targetDist) {
       const speed = this.walkSpeed * 0.55;
-      this.tempVec.copy(this.direction).multiplyScalar(speed * dt);
-      root.position.add(this.tempVec);
+      const forwardStep = (this.direction.z === 0 ? 1 : Math.sign(this.direction.z)) * speed * dt;
+      root.position.z += forwardStep;
 
       const bob = Math.sin((this._idleTime + this.gaitPhase * Math.PI * 2) * 2.0) * 0.04;
       root.position.y = this.baseHeight + bob;
@@ -395,30 +402,36 @@ export class ElephantLocomotion {
   }
 
   rotateDirection(angle) {
-    // Rotate direction vector around Y axis by `angle`
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    const x = this.direction.x;
-    const z = this.direction.z;
-    this.direction.x = x * cos - z * sin;
-    this.direction.z = x * sin + z * cos;
-    this.direction.normalize();
+    // Restrict heading to forward/back along Z. Large turns simply flip direction.
+    if (Math.abs(angle) > Math.PI * 0.5) {
+      this.direction.z *= -1;
+    }
+    this.clampDirectionToZAxis();
   }
 
   turnToward(targetDir, dt) {
-    // Smoothly turn current direction toward target in XZ
-    const currentAngle = Math.atan2(this.direction.z, this.direction.x);
-    const targetAngle = Math.atan2(targetDir.z, targetDir.x);
-    let diff = targetAngle - currentAngle;
+    // Smoothly prefer forward/back targets based on Z sign only
+    const targetSign = Math.sign(targetDir.z);
+    const desiredSign = targetSign === 0 ? Math.sign(this.direction.z) || 1 : targetSign;
+    const needsFlip = Math.sign(this.direction.z) !== desiredSign;
 
-    // Wrap to [-π, π]
-    while (diff > Math.PI) diff -= 2 * Math.PI;
-    while (diff < -Math.PI) diff += 2 * Math.PI;
+    if (needsFlip) {
+      const maxTurn = 1.2 * dt;
+      const turnProgress = Math.min(1, Math.abs(desiredSign - this.direction.z) * 0.5 / Math.max(maxTurn, 0.0001));
+      if (turnProgress >= 1) {
+        this.direction.z = desiredSign;
+      } else {
+        // Ease toward flipping the sign without sideways drift
+        this.direction.z = THREE.MathUtils.damp(this.direction.z, desiredSign, 4.0, dt);
+      }
+    }
 
-    const maxTurn = 1.2 * dt; // max turn speed
-    const clamped = Math.max(-maxTurn, Math.min(maxTurn, diff));
+    this.clampDirectionToZAxis();
+  }
 
-    this.rotateDirection(clamped);
+  clampDirectionToZAxis(preferredZ = null) {
+    const sign = Math.sign(preferredZ !== null ? preferredZ : this.direction.z) || 1;
+    this.direction.set(0, 0, sign);
   }
 
   // -----------------------------
@@ -534,9 +547,9 @@ export class ElephantLocomotion {
       s.velocity += acc * dt;
       s.angle += s.velocity * dt;
 
-      if (tailBase) tailBase.rotation.x += s.angle * 0.6;
-      if (tailMid) tailMid.rotation.x += s.angle * 0.8;
-      if (tailTip) tailTip.rotation.x += s.angle * 1.0;
+      if (tailBase) tailBase.rotation.y += s.angle * 0.6;
+      if (tailMid) tailMid.rotation.y += s.angle * 0.8;
+      if (tailTip) tailTip.rotation.y += s.angle * 1.0;
     }
   }
 
@@ -664,10 +677,8 @@ export class ElephantLocomotion {
 
     // Forward motion: accelerate/decelerate via walkBlend
     const speed = this.walkSpeed * this.walkBlend;
-    const dx = this.direction.x * speed * dt;
-    const dz = this.direction.z * speed * dt;
-    root.position.x += dx;
-    root.position.z += dz;
+    const forwardStep = (this.direction.z === 0 ? 1 : Math.sign(this.direction.z)) * speed * dt;
+    root.position.z += forwardStep;
 
     // Small forward lean at peak of step
     const leanForward = Math.sin(this.gaitPhase * TWO_PI) * 0.12 * this.walkBlend;
