@@ -722,14 +722,21 @@ export class ElephantLocomotion {
   updateWalk(dt, root, mesh, bones) {
     const TWO_PI = Math.PI * 2;
 
+    const avoidance = this.computeAvoidance(root.position, true);
+    const desiredDirection = this.direction.clone().add(avoidance);
+    this.turnToward(desiredDirection, dt, 3.0);
+
     // Body bobbing: more pronounced than idle
     const bob = Math.sin((this.gaitPhase * TWO_PI) * 2.0) * 0.07 * this.walkBlend;
     root.position.y = this.baseHeight + bob;
 
     // Forward motion: accelerate/decelerate via walkBlend
     const speed = this.walkSpeed * this.walkBlend;
-    const forwardStep = (this.direction.z === 0 ? 1 : Math.sign(this.direction.z)) * speed * dt;
-    root.position.z += forwardStep;
+    this.moveForward(root, speed, dt);
+    this.keepWithinBounds(root);
+
+    const yaw = Math.atan2(this.direction.x, this.direction.z);
+    root.rotation.y = THREE.MathUtils.damp(root.rotation.y, yaw, 6.0, dt);
 
     // Small forward lean at peak of step
     const leanForward = Math.sin(this.gaitPhase * TWO_PI) * 0.12 * this.walkBlend;
