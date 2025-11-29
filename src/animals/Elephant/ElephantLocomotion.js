@@ -68,14 +68,19 @@ export class ElephantLocomotion {
     // Global time tracker
     this._time = 0;
 
-    // Reusable temp vector
+    // Reusable temp vectors
     this.tempVec = new THREE.Vector3();
+    this.tempVec2 = new THREE.Vector3();
 
     // Internal timers
     this._stateTime = 0;
 
     // For transitional soft-start / soft-stop of walking
     this.walkBlend = 0; // 0=not walking, 1=fully walking
+
+    // Pathing helpers
+    this.obstaclePadding = 0.6;
+    this.lookAheadDistance = 2.3;
 
     // Curiosity: how much the elephant is sniffing around
     this.curiousBlend = 0;
@@ -110,9 +115,7 @@ export class ElephantLocomotion {
     const mesh = this.elephant.mesh;
 
     if (!root || !mesh) return;
-
-    // Enforce forward/back heading along local Z
-    this.clampDirectionToZAxis();
+    this.ensureDirectionNormalized();
 
     // Advance time
     this._time += dt;
@@ -221,6 +224,77 @@ export class ElephantLocomotion {
     }
   }
 
+  computeAvoidance(position, includeWater = true) {
+    const steering = new THREE.Vector3();
+
+    if (!this.environment) return steering;
+
+    const softBoundary = this.enclosureRadius * this.boundarySoftRadius;
+    const offset = this.tempVec.copy(position).sub(this.enclosureCenter);
+    offset.y = 0;
+    const distanceFromCenter = offset.length();
+    if (distanceFromCenter > softBoundary) {
+      const pull = offset.clone().multiplyScalar(-1).normalize();
+      const strength = Math.min(1, (distanceFromCenter - softBoundary) / Math.max(softBoundary, 0.0001));
+      steering.add(pull.multiplyScalar(strength * 0.9));
+    }
+
+    const obstacles = this.environment.obstacles || [];
+    obstacles.forEach((obs) => {
+      if (obs.type === 'water' && (!includeWater || this.state === 'drink')) return;
+
+      const obsPos = obs.position || this.tempVec2.set(0, 0, 0);
+      const toObstacle = this.tempVec2.copy(position).sub(obsPos);
+      toObstacle.y = 0;
+      const distance = toObstacle.length();
+      const radius = (obs.radius || 0.6) + this.obstaclePadding;
+
+      // Look slightly ahead so we steer early
+      const future = this.tempVec.copy(position)
+        .add(this.direction.clone().setY(0).normalize().multiplyScalar(this.lookAheadDistance));
+      const futureDistance = future.sub(obsPos).setY(0).length();
+      const effectiveDist = Math.min(distance, futureDistance);
+
+      if (effectiveDist < radius) {
+        const strength = (1 - (effectiveDist / radius)) * (obs.weight || 1);
+        const away = toObstacle.lengthSq() < 0.0001 ? this.direction.clone().negate() : toObstacle.normalize();
+        steering.add(away.multiplyScalar(strength));
+      }
+    });
+
+    return steering;
+  }
+
+  moveForward(root, speed, dt, maxDistance = null) {
+    const step = speed * dt;
+    const clampedStep = maxDistance !== null ? Math.min(step, maxDistance) : step;
+    this.ensureDirectionNormalized();
+    root.position.addScaledVector(this.direction, clampedStep);
+  }
+
+  keepWithinBounds(root) {
+    const afterMove = this.tempVec.copy(root.position).sub(this.enclosureCenter);
+    afterMove.y = 0;
+    const distAfter = afterMove.length();
+    if (distAfter > this.enclosureRadius) {
+      afterMove.setLength(Math.max(0, this.enclosureRadius - 0.1));
+      root.position.set(
+        this.enclosureCenter.x + afterMove.x,
+        root.position.y,
+        this.enclosureCenter.z + afterMove.z
+      );
+      this.turnToward(afterMove.clone().multiplyScalar(-1).normalize(), 0.016);
+    }
+  }
+
+  ensureDirectionNormalized() {
+    this.direction.y = 0;
+    if (this.direction.lengthSq() < 0.0001) {
+      this.direction.set(0, 0, 1);
+    }
+    this.direction.normalize();
+  }
+
   // -----------------------------
   // WANDER STATE
   // -----------------------------
@@ -230,47 +304,22 @@ export class ElephantLocomotion {
    * turning over time with some noise. Legs follow a gait; trunk & ears sway.
    */
   updateWander(dt, root, mesh, bones) {
-    // Basic wandering logic: gently rotate direction vector over time
-    const turnSpeed = 0.4; // rad/s for wandering
-    const noise = (Math.random() - 0.5) * 0.3; // some randomness
-    const turnAngle = turnSpeed * dt * noise;
+    const drift = this.tempVec2.set(
+      (Math.random() - 0.5) * 0.35,
+      0,
+      (Math.random() - 0.5) * 0.35
+    );
 
-    // Boundary steering
-    const rel = this.tempVec.copy(root.position).sub(this.enclosureCenter);
-    rel.y = 0;
-    const distanceFromCenter = rel.length();
-    const softBoundary = this.enclosureRadius * this.boundarySoftRadius;
-    if (distanceFromCenter > softBoundary) {
-      // Look back toward center gently
-      const desired = rel.clone().multiplyScalar(-1);
-      desired.normalize();
-      this.turnToward(desired, dt);
-    } else {
-      // Occasionally flip to roam forward/back without lateral strafing
-      if (Math.random() < Math.abs(turnAngle) * 0.5) {
-        this.direction.z *= -1;
-      }
-      this.clampDirectionToZAxis();
-    }
+    const avoidance = this.computeAvoidance(root.position, true);
+    const desiredDirection = this.direction.clone()
+      .add(drift.multiplyScalar(0.3))
+      .add(avoidance);
 
-    // Move root along direction while keeping within enclosure radius
+    this.turnToward(desiredDirection, dt, 2.6);
+
     const forwardSpeed = this.walkSpeed * 0.7;
-    const forwardStep = (this.direction.z === 0 ? 1 : Math.sign(this.direction.z)) * forwardSpeed * dt;
-    root.position.z += forwardStep;
-
-    const afterMove = this.tempVec.copy(root.position).sub(this.enclosureCenter);
-    afterMove.y = 0;
-    const distAfter = afterMove.length();
-    if (distAfter > this.enclosureRadius) {
-      afterMove.setLength(this.enclosureRadius - 0.1);
-      root.position.set(
-        this.enclosureCenter.x + afterMove.x,
-        root.position.y,
-        this.enclosureCenter.z + afterMove.z
-      );
-      // turn back toward centre on next frame
-      this.turnToward(afterMove.clone().multiplyScalar(-1).normalize(), dt);
-    }
+    this.moveForward(root, forwardSpeed, dt);
+    this.keepWithinBounds(root);
 
     // Body bobbing
     const time = this._idleTime * 1.4;
@@ -280,6 +329,8 @@ export class ElephantLocomotion {
     // Lean slightly into gait
     const leanForward = Math.sin(this.gaitPhase * Math.PI * 2) * 0.05;
     const leanSide = Math.sin(this.gaitPhase * Math.PI * 4) * 0.03;
+    const yaw = Math.atan2(this.direction.x, this.direction.z);
+    root.rotation.y = THREE.MathUtils.damp(root.rotation.y, yaw, 6.0, dt);
     root.rotation.x = leanForward;
     root.rotation.z = leanSide;
 
@@ -297,18 +348,28 @@ export class ElephantLocomotion {
     const distance = approach.length();
     if (distance > 0.0001) {
       approach.normalize();
-      this.turnToward(approach, dt);
     }
+
+    const avoidance = this.computeAvoidance(root.position, false);
+    const desiredDir = approach.clone().add(avoidance.multiplyScalar(0.8));
+    this.turnToward(desiredDir, dt, 3.3);
 
     // Approach the pond until close enough
     const targetDist = this.pondRadius + this.drinkApproachDistance;
     if (distance > targetDist) {
       const speed = this.walkSpeed * 0.55;
-      const forwardStep = (this.direction.z === 0 ? 1 : Math.sign(this.direction.z)) * speed * dt;
-      root.position.z += forwardStep;
+      const remaining = Math.max(0, distance - targetDist);
+      this.moveForward(root, speed, dt, remaining);
+      this.keepWithinBounds(root);
 
       const bob = Math.sin((this._idleTime + this.gaitPhase * Math.PI * 2) * 2.0) * 0.04;
       root.position.y = this.baseHeight + bob;
+      root.rotation.y = THREE.MathUtils.damp(
+        root.rotation.y,
+        Math.atan2(this.direction.x, this.direction.z),
+        6.0,
+        dt
+      );
       root.rotation.x = -0.05;
 
       this.applyLegWalk(bones, this.gaitPhase);
@@ -401,37 +462,27 @@ export class ElephantLocomotion {
     }
   }
 
-  rotateDirection(angle) {
-    // Restrict heading to forward/back along Z. Large turns simply flip direction.
-    if (Math.abs(angle) > Math.PI * 0.5) {
-      this.direction.z *= -1;
-    }
-    this.clampDirectionToZAxis();
-  }
+  turnToward(targetDir, dt, turnRate = 3.0) {
+    if (!targetDir) return;
 
-  turnToward(targetDir, dt) {
-    // Smoothly prefer forward/back targets based on Z sign only
-    const targetSign = Math.sign(targetDir.z);
-    const desiredSign = targetSign === 0 ? Math.sign(this.direction.z) || 1 : targetSign;
-    const needsFlip = Math.sign(this.direction.z) !== desiredSign;
+    const desired = targetDir.clone();
+    desired.y = 0;
+    if (desired.lengthSq() < 0.0001) return;
 
-    if (needsFlip) {
-      const maxTurn = 1.2 * dt;
-      const turnProgress = Math.min(1, Math.abs(desiredSign - this.direction.z) * 0.5 / Math.max(maxTurn, 0.0001));
-      if (turnProgress >= 1) {
-        this.direction.z = desiredSign;
-      } else {
-        // Ease toward flipping the sign without sideways drift
-        this.direction.z = THREE.MathUtils.damp(this.direction.z, desiredSign, 4.0, dt);
-      }
-    }
+    desired.normalize();
+    this.ensureDirectionNormalized();
 
-    this.clampDirectionToZAxis();
-  }
+    const currentYaw = Math.atan2(this.direction.x, this.direction.z);
+    const targetYaw = Math.atan2(desired.x, desired.z);
+    let delta = targetYaw - currentYaw;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
 
-  clampDirectionToZAxis(preferredZ = null) {
-    const sign = Math.sign(preferredZ !== null ? preferredZ : this.direction.z) || 1;
-    this.direction.set(0, 0, sign);
+    const maxTurn = Math.max(0.0001, turnRate * dt);
+    delta = THREE.MathUtils.clamp(delta, -maxTurn, maxTurn);
+
+    const newYaw = currentYaw + delta;
+    this.direction.set(Math.sin(newYaw), 0, Math.cos(newYaw));
   }
 
   // -----------------------------
