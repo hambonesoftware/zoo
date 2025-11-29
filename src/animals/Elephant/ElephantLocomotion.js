@@ -554,23 +554,23 @@ export class ElephantLocomotion {
 
     // Determine a simple "forward velocity" from walkBlend + gait
     const forwardVel = this.walkBlend * this.walkSpeed;
-    const turning = Math.sin(this.gaitPhase * TWO_PI) * this.walkBlend;
+    const turning = Math.sin(this.gaitPhase * TWO_PI * 0.7) * this.walkBlend;
 
-    // Spring parameters
-    const stiffness = 18.0;
-    const damping = 4.5;
+    // Spring parameters (softened to reduce snap)
+    const stiffness = 10.0;
+    const damping = 3.2;
 
     // Compute target offsets for trunk, ears, tail
-    const trunkTarget = forwardVel * 0.6 + turning * 0.4;
-    const earsTarget = forwardVel * 0.8 + turning * 0.4;
-    const tailTarget = forwardVel * -0.9 + turning * 0.5;
+    const trunkTarget = forwardVel * 0.55 + turning * 0.35;
+    const earsTarget = forwardVel * 0.65 + turning * 0.35;
+    const tailTarget = forwardVel * -0.75 + turning * 0.4;
 
     // --- Trunk spring ---
     {
       const s = this._spring.trunk;
       const acc = (trunkTarget - s.angle) * stiffness - s.velocity * damping;
       s.velocity += acc * dt;
-      s.angle += s.velocity * dt;
+      s.angle = THREE.MathUtils.clamp(s.angle + s.velocity * dt, -0.35, 0.35);
 
       if (trunkBase) trunkBase.rotation.x += s.angle * 0.12;
       if (trunkMid1) trunkMid1.rotation.x += s.angle * 0.45;
@@ -583,7 +583,7 @@ export class ElephantLocomotion {
       const s = this._spring.ears;
       const acc = (earsTarget - s.angle) * stiffness - s.velocity * damping;
       s.velocity += acc * dt;
-      s.angle += s.velocity * dt;
+      s.angle = THREE.MathUtils.clamp(s.angle + s.velocity * dt, -0.28, 0.28);
       // Apply symmetrical ear swing around Y axis (forward/back sway)
       const earLeft = bones['ear_left'];
       const earRight = bones['ear_right'];
@@ -596,7 +596,7 @@ export class ElephantLocomotion {
       const s = this._spring.tail;
       const acc = (tailTarget - s.angle) * stiffness - s.velocity * damping;
       s.velocity += acc * dt;
-      s.angle += s.velocity * dt;
+      s.angle = THREE.MathUtils.clamp(s.angle + s.velocity * dt, -0.32, 0.32);
 
       if (tailBase) tailBase.rotation.y += s.angle * 0.6;
       if (tailMid) tailMid.rotation.y += s.angle * 0.8;
@@ -805,8 +805,8 @@ export class ElephantLocomotion {
     const trunkMid2 = bones['trunk_mid2'];
     const trunkTip = bones['trunk_tip'];
 
-    const sway = Math.sin(t * 1.5) * 0.4 + Math.sin(phase * Math.PI * 2) * 0.3;
-    const dip  = Math.sin(t * 1.2 + 1.0) * 0.3;
+    const sway = THREE.MathUtils.clamp(Math.sin(t * 1.0) * 0.32 + Math.sin(phase * Math.PI * 1.4) * 0.22, -0.45, 0.45);
+    const dip  = THREE.MathUtils.clamp(Math.sin(t * 0.85 + 1.0) * 0.24, -0.32, 0.32);
 
     if (trunkBase) {
       trunkBase.rotation.y = sway * 0.55;
@@ -832,11 +832,11 @@ export class ElephantLocomotion {
     if (!earLeft && !earRight) return;
 
     // A bit more energetic ear motion while walking
-    const gaitFlap = Math.sin(phase * 2.0) * 0.18;
-    const idleFlap = Math.sin(t * 0.9) * 0.08;
+    const gaitFlap = Math.sin(phase * 1.2) * 0.14;
+    const idleFlap = Math.sin(t * 0.65) * 0.06;
 
-    const totalLeft = gaitFlap + idleFlap;
-    const totalRight = gaitFlap + idleFlap * 0.9;
+    const totalLeft = THREE.MathUtils.clamp(gaitFlap + idleFlap, -0.22, 0.22);
+    const totalRight = THREE.MathUtils.clamp(gaitFlap + idleFlap * 0.9, -0.22, 0.22);
 
     if (earLeft) {
       earLeft.rotation.y = totalLeft;
