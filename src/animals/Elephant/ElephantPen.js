@@ -17,6 +17,7 @@ export class ElephantPen {
     this.position = options.position || new THREE.Vector3(0, 0, 0);
     this.pondRadius = options.pondRadius || 2.2;
     this.groundHeight = 0;
+    this.obstacles = [];
 
     // === Master group for everything in this pen ===
     this.group = new THREE.Group();
@@ -70,6 +71,14 @@ export class ElephantPen {
     pond.receiveShadow = false;
     pond.name = 'ElephantPond';
     this.group.add(pond);
+
+    // Keep a light avoidance radius around the pond so the elephant walks
+    // around the water unless deliberately entering the drink state.
+    this.obstacles.push({
+      position: this.pondPosition.clone(),
+      radius: this.pondRadius + 0.55,
+      type: 'water'
+    });
 
     const pondRimGeo = new THREE.RingGeometry(this.pondRadius * 0.95, this.pondRadius + 0.3, 48);
     const pondRimMat = new THREE.MeshStandardMaterial({ color: 0x6d5b3b, roughness: 0.9, side: THREE.DoubleSide });
@@ -161,7 +170,8 @@ export class ElephantPen {
       enclosureCenter: new THREE.Vector3(0, 0, 0),
       enclosureRadius: this.radius,
       pondCenter: this.pondPosition.clone(),
-      pondRadius: this.pondRadius
+      pondRadius: this.pondRadius,
+      obstacles: this.obstacles
     };
     if (this.Elephant.behavior && typeof this.Elephant.behavior.configureEnvironment === 'function') {
       this.Elephant.behavior.configureEnvironment(environment);
@@ -214,6 +224,9 @@ export class ElephantPen {
       mesh.receiveShadow = true;
       mesh.name = `ElephantRock${i}`;
       this.group.add(mesh);
+
+      const avoidanceRadius = Math.max(rock.scale[0], rock.scale[2]) * 0.75 + 0.25;
+      this.obstacles.push({ position: rock.pos.clone(), radius: avoidanceRadius, type: 'rock' });
     });
 
     const logGeo = new THREE.CylinderGeometry(0.25, 0.3, 3.5, 12);
@@ -224,6 +237,12 @@ export class ElephantPen {
     log.receiveShadow = true;
     log.name = 'ElephantLog';
     this.group.add(log);
+
+    this.obstacles.push({
+      position: log.position.clone(),
+      radius: 1.9,
+      type: 'log'
+    });
   }
 
   _addPerimeterPosts() {
