@@ -46,7 +46,31 @@ export class ElephantBehavior {
    * @param {string} nextState
    */
   setState(nextState) {
+    const allowed = ['idle', 'walk', 'wander', 'curious', 'drink', 'excited'];
+    if (!allowed.includes(nextState)) return;
     this.state = nextState;
+    if (this.locomotion?.setState) {
+      this.locomotion.setState(nextState);
+    }
+  }
+
+  /**
+   * Define a target position for the elephant to walk to before drinking.
+   * @param {THREE.Vector3|{x:number,y?:number,z:number}} target
+   */
+  setDrinkTarget(target) {
+    if (this.locomotion?.setDrinkTarget) {
+      this.locomotion.setDrinkTarget(target);
+    }
+  }
+
+  /**
+   * Convenience helper: set drink target and transition to the drink state.
+   * @param {THREE.Vector3|{x:number,y?:number,z:number}} target
+   */
+  queueDrinkAt(target) {
+    this.setDrinkTarget(target);
+    this.setState('drink');
   }
 
   /**
@@ -76,7 +100,8 @@ export class ElephantBehavior {
     return {
       state: this.state,
       time: this.time,
-      locomotionState: this.locomotion ? this.locomotion.state : null
+      locomotionState: this.locomotion ? this.locomotion.state : null,
+      drinkTarget: this.locomotion ? this.locomotion.drinkTarget : null
     };
   }
 }
