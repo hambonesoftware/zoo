@@ -726,9 +726,11 @@ export class ElephantLocomotion {
     const desiredDirection = this.direction.clone().add(avoidance);
     this.turnToward(desiredDirection, dt, 3.0);
 
-    // Body bobbing: more pronounced than idle
+    // Body bobbing and weight shift: more pronounced than idle
     const bob = Math.sin((this.gaitPhase * TWO_PI) * 2.0) * 0.07 * this.walkBlend;
+    const sway = Math.sin((this.gaitPhase + 0.25) * TWO_PI) * 0.035 * this.walkBlend;
     root.position.y = this.baseHeight + bob;
+    root.position.x = sway;
 
     // Forward motion: accelerate/decelerate via walkBlend
     const speed = this.walkSpeed * this.walkBlend;
@@ -784,22 +786,24 @@ export class ElephantLocomotion {
 
     const swing = (p, amp) => Math.sin(p * TWO_PI) * amp;
     const knee  = (p, factor) => Math.max(0, -Math.sin(p * TWO_PI)) * factor;
+    const stance = (p) => Math.max(0, Math.cos(p * TWO_PI)) ** 2;
+    const lift = (p) => Math.max(0, Math.sin(p * TWO_PI)) ** 1.5;
 
     // Front Left
-    if (legFLU) legFLU.rotation.x = swing(phaseFL, amplitudeFront) * 0.9;
-    if (legFLL) legFLL.rotation.x = knee(phaseFL, kneeBendFactor);
+    if (legFLU) legFLU.rotation.x = swing(phaseFL, amplitudeFront * 0.95) - stance(phaseFL) * amplitudeFront * 0.18;
+    if (legFLL) legFLL.rotation.x = knee(phaseFL, kneeBendFactor) + lift(phaseFL) * 0.1;
 
     // Back Left
-    if (legBLU) legBLU.rotation.x = swing(phaseBL, amplitudeBack);
-    if (legBLL) legBLL.rotation.x = knee(phaseBL, kneeBendFactor * 1.1);
+    if (legBLU) legBLU.rotation.x = swing(phaseBL, amplitudeBack) - stance(phaseBL) * amplitudeBack * 0.22;
+    if (legBLL) legBLL.rotation.x = knee(phaseBL, kneeBendFactor * 1.1) + lift(phaseBL) * 0.12;
 
     // Front Right
-    if (legFRU) legFRU.rotation.x = swing(phaseFR, amplitudeFront);
-    if (legFRL) legFRL.rotation.x = knee(phaseFR, kneeBendFactor);
+    if (legFRU) legFRU.rotation.x = swing(phaseFR, amplitudeFront) - stance(phaseFR) * amplitudeFront * 0.18;
+    if (legFRL) legFRL.rotation.x = knee(phaseFR, kneeBendFactor) + lift(phaseFR) * 0.1;
 
     // Back Right
-    if (legBRU) legBRU.rotation.x = swing(phaseBR, amplitudeBack) * 1.1;
-    if (legBRL) legBRL.rotation.x = knee(phaseBR, kneeBendFactor * 1.05);
+    if (legBRU) legBRU.rotation.x = swing(phaseBR, amplitudeBack * 1.05) - stance(phaseBR) * amplitudeBack * 0.24;
+    if (legBRL) legBRL.rotation.x = knee(phaseBR, kneeBendFactor * 1.05) + lift(phaseBR) * 0.14;
   }
 
   /**
