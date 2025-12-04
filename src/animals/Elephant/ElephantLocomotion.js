@@ -14,10 +14,10 @@ import * as THREE from 'three';
  * Expected bone keys (any missing ones are safely ignored):
  * - 'spine_base' (root / hips)
  * - 'spine_mid', 'spine_neck', 'head'
- * - 'leg_front_L_upper', 'leg_front_L_lower'
- * - 'leg_front_R_upper', 'leg_front_R_lower'
- * - 'leg_back_L_upper', 'leg_back_L_lower'
- * - 'leg_back_R_upper', 'leg_back_R_lower'
+ * - Front legs: 'front_left_upper', 'front_left_lower', 'front_left_foot'
+ * - Front legs: 'front_right_upper', 'front_right_lower', 'front_right_foot'
+ * - Back legs:  'back_left_upper',  'back_left_lower',  'back_left_foot'
+ * - Back legs:  'back_right_upper', 'back_right_lower', 'back_right_foot'
  * - 'trunk_base', 'trunk_mid1', 'trunk_mid2', 'trunk_tip'
  * - 'ear_left', 'ear_right'
  * - 'tail_base', 'tail_mid', 'tail_tip'
@@ -188,12 +188,13 @@ export class ElephantLocomotion {
 
     const bones = elephant.bones;
     const mesh = elephant.mesh;
+    const skeleton = elephant.skeleton;
 
     const legDefs = [
-      { key: 'FL', upper: 'leg_front_L_upper', lower: 'leg_front_L_lower', isFront: true,  isLeft: true  },
-      { key: 'FR', upper: 'leg_front_R_upper', lower: 'leg_front_R_lower', isFront: true,  isLeft: false },
-      { key: 'BL', upper: 'leg_back_L_upper',  lower: 'leg_back_L_lower',  isFront: false, isLeft: true  },
-      { key: 'BR', upper: 'leg_back_R_upper',  lower: 'leg_back_R_lower',  isFront: false, isLeft: false }
+      { key: 'FL', upper: 'front_left_upper',  lower: 'front_left_lower',  foot: 'front_left_foot',  isFront: true,  isLeft: true  },
+      { key: 'FR', upper: 'front_right_upper', lower: 'front_right_lower', foot: 'front_right_foot', isFront: true,  isLeft: false },
+      { key: 'BL', upper: 'back_left_upper',   lower: 'back_left_lower',   foot: 'back_left_foot',   isFront: false, isLeft: true  },
+      { key: 'BR', upper: 'back_right_upper',  lower: 'back_right_lower',  foot: 'back_right_foot',  isFront: false, isLeft: false }
     ];
 
     const legs = {};
@@ -201,37 +202,31 @@ export class ElephantLocomotion {
     const kneeWorld  = new THREE.Vector3();
     const ankleWorld = new THREE.Vector3();
     const footLocal  = new THREE.Vector3();
+    const invUpper   = new THREE.Matrix4();
 
     // Make sure world matrices are fresh before sampling positions.
+    if (skeleton && skeleton.bones) {
+      skeleton.bones.forEach((b) => b.updateMatrixWorld(true));
+    } else {
+      Object.values(bones).forEach((b) => b.updateMatrixWorld(true));
+    }
     mesh.updateMatrixWorld(true);
 
     for (const def of legDefs) {
       const upper = bones[def.upper];
       const lower = bones[def.lower];
-      if (!upper || !lower) continue;
+      const foot  = bones[def.foot];
+      if (!upper || !lower || !foot) continue;
 
       upper.getWorldPosition(hipWorld);
       lower.getWorldPosition(kneeWorld);
+      foot.getWorldPosition(ankleWorld);
 
       const len1 = hipWorld.distanceTo(kneeWorld);
+      const len2 = Math.max(kneeWorld.distanceTo(ankleWorld), 0.0001);
 
-      // Try to use a child bone as the approximate foot position if one exists.
-      if (lower.children && lower.children.length > 0) {
-        lower.children[0].getWorldPosition(ankleWorld);
-      } else {
-        // Fall back to a point slightly below the lower joint along world -Y.
-        ankleWorld.copy(kneeWorld);
-        ankleWorld.y -= len1 * 0.9;
-      }
-
-      let len2 = kneeWorld.distanceTo(ankleWorld);
-      if (!Number.isFinite(len2) || len2 <= 0.0001) {
-        len2 = len1 * 0.9;
-      }
-
-      // Convert the ankle/foot world position into the upper-bone local space.
-      footLocal.copy(ankleWorld);
-      upper.worldToLocal(footLocal);
+      invUpper.copy(upper.matrixWorld).invert();
+      footLocal.copy(ankleWorld).applyMatrix4(invUpper);
 
       const restDistance = Math.sqrt(footLocal.y * footLocal.y + footLocal.z * footLocal.z);
 
@@ -239,10 +234,15 @@ export class ElephantLocomotion {
         ...def,
         upper,
         lower,
+        foot,
         len1: Math.max(len1, 0.001),
         len2: Math.max(len2, 0.001),
         restFootLocal: footLocal.clone(),
-        restDistance: restDistance > 0.0001 ? restDistance : (len1 + len2) * 0.7
+        restDistance: restDistance > 0.0001 ? restDistance : (len1 + len2) * 0.7,
+        swingLift: def.isFront ? 0.28 : 0.32,
+        restUpperRotX: upper.rotation.x,
+        restLowerRotX: lower.rotation.x,
+        restFootRotX: foot.rotation.x
       };
     }
 
@@ -258,64 +258,52 @@ export class ElephantLocomotion {
    * targetLocal is expressed in the upper-bone's local space.
    */
   _solveLegIKFromLocalTarget(leg, targetLocal) {
-    if (!leg || !leg.upper || !leg.lower || !leg.restFootLocal) return;
+    if (!leg || !leg.upper || !leg.lower || !leg.foot || !leg.restFootLocal) return;
 
     const len1 = leg.len1;
     const len2 = leg.len2;
     if (!Number.isFinite(len1) || !Number.isFinite(len2)) return;
 
+    const upper = leg.upper;
+    const lower = leg.lower;
+    const foot = leg.foot;
+
     // Project into the 2D IK plane (Y/Z of the upper-bone space).
-    let x = targetLocal.z;
-    let y = targetLocal.y;
+    const y = targetLocal.y;
+    const z = targetLocal.z;
 
-    let radius = Math.sqrt(x * x + y * y);
+    let u = -y; // downwards
+    let v = z;  // forward
 
-    const restDistance = leg.restDistance || (len1 + len2) * 0.7;
-
-    // Keep the target radius near the bind-pose distance so that we do not
-    // over-extend or fully collapse the leg.
-    const minRadius = Math.max(0.2 * restDistance, 0.1 * Math.min(len1, len2));
-    const maxRadius = Math.min(1.3 * restDistance, 0.95 * (len1 + len2));
-    const clampedRadius = THREE.MathUtils.clamp(radius, minRadius, maxRadius);
-
-    if (radius < 1e-5) {
-      // Too close to the hip: just leave the current joint angles.
+    const dSq = u * u + v * v;
+    if (dSq < 1e-6) {
+      upper.rotation.x = leg.restUpperRotX;
+      lower.rotation.x = leg.restLowerRotX;
+      foot.rotation.x  = leg.restFootRotX;
       return;
     }
 
-    if (Math.abs(clampedRadius - radius) > 1e-5) {
-      const scale = clampedRadius / radius;
-      x *= scale;
-      y *= scale;
-      radius = clampedRadius;
-    }
+    let d = Math.sqrt(dSq);
+    const maxReach = len1 + len2 * 0.999;
+    d = Math.min(Math.max(d, 0.0001), maxReach);
 
-    const radiussq = radius * radius;
+    const cosK = (len1 * len1 + len2 * len2 - d * d) / (2 * len1 * len2);
+    const kneeInternal = Math.acos(THREE.MathUtils.clamp(cosK, -1, 1));
 
-    // Angle from local -Y axis to the target in the Y/Z plane.
-    const theta = Math.atan2(x, -y);
+    const targetAngle = Math.atan2(v, u);
 
-    const denom = -2 * len1 * len2;
-    let acosArg = (radiussq - len1 * len1 - len2 * len2) / denom;
-    acosArg = THREE.MathUtils.clamp(acosArg, -1, 1);
+    const hipAngle = targetAngle - Math.atan2(
+      len2 * Math.sin(kneeInternal),
+      len1 + len2 * Math.cos(kneeInternal)
+    );
 
-    const elbowSupplement = Math.acos(acosArg);
+    const kneeBend = Math.PI - kneeInternal;
 
-    let sinTerm = len2 * Math.sin(elbowSupplement) / radius;
-    sinTerm = THREE.MathUtils.clamp(sinTerm, -1, 1);
-    const alpha = Math.asin(sinTerm);
+    upper.rotation.x = leg.restUpperRotX + hipAngle;
+    lower.rotation.x = leg.restLowerRotX + kneeBend;
 
-    // Use the "elbow-back" configuration for all legs so the knees bend in a
-    // natural direction for a heavy quadruped.
-    const q0 = theta - alpha;
-    const q1 = Math.PI - elbowSupplement;
-
-    if (Number.isFinite(q0)) {
-      leg.upper.rotation.x = -q0;
-    }
-    if (Number.isFinite(q1)) {
-      leg.lower.rotation.x = -q1;
-    }
+    const footComp = -(hipAngle + kneeBend) * 0.3;
+    foot.rotation.x = leg.restFootRotX + footComp;
   }
 
   /**
