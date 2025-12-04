@@ -159,12 +159,13 @@ export class ElephantPen {
 
     this.Elephant = new ElephantCreature(creatureOptions);
 
-    // Position the elephant on the ground, away from the pond initially.
-    const elephantY = this.groundHeight + 1.5;
-    this.Elephant.position.set(-this.radius * 0.15, elephantY, this.radius * 0.05);
+    // Position the elephant away from the pond and then snap its feet to the ground.
+    this.Elephant.position.set(-this.radius * 0.15, this.groundHeight, this.radius * 0.05);
     this.Elephant.rotation.y = typeof options.rotationY === 'number' ? options.rotationY : Math.PI * 0.1;
     this.Elephant.name = 'ElephantCreature';
     this.group.add(this.Elephant);
+
+    this._placeElephantOnGround();
 
     if (this.Elephant.mesh) {
       this.Elephant.mesh.castShadow = true;
@@ -177,7 +178,8 @@ export class ElephantPen {
       enclosureRadius: this.radius,
       pondCenter: this.pondPosition.clone(),
       pondRadius: this.pondRadius,
-      obstacles: this.obstacles
+      obstacles: this.obstacles,
+      groundHeight: this.groundHeight
     };
     if (this.Elephant.behavior && typeof this.Elephant.behavior.configureEnvironment === 'function') {
       this.Elephant.behavior.configureEnvironment(environment);
@@ -194,6 +196,7 @@ export class ElephantPen {
     this.bboxHelper.visible =
       options.showBoundingBox !== undefined ? !!options.showBoundingBox : false;
     this.group.add(this.bboxHelper);
+    this.bboxHelper.update();
 
     // Optional debug helpers
     if (options.debugPen) {
@@ -210,6 +213,20 @@ export class ElephantPen {
 
     // Finally, attach the whole pen to the scene.
     scene.add(this.group);
+  }
+
+  _placeElephantOnGround() {
+    if (!this.Elephant) return;
+
+    this.Elephant.updateMatrixWorld(true);
+    const bbox = new THREE.Box3().setFromObject(this.Elephant);
+    if (bbox.isEmpty()) return;
+
+    const deltaY = this.groundHeight - bbox.min.y;
+    if (Math.abs(deltaY) > 1e-4) {
+      this.Elephant.position.y += deltaY;
+      this.Elephant.updateMatrixWorld(true);
+    }
   }
 
   _addRocksAndLogs() {
