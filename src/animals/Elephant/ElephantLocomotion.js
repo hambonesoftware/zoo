@@ -51,6 +51,7 @@ export class ElephantLocomotion {
     this.enclosureRadius = 8.0;
     this.pondCenter = new THREE.Vector3();
     this.pondRadius = 1.4;
+    this.sizeScale = 1.0;
     this.boundarySoftRadius = 0.75; // fraction of enclosure at which to steer back
 
     // Drinking behaviour timers
@@ -102,6 +103,11 @@ export class ElephantLocomotion {
     if (typeof env.enclosureRadius === 'number') this.enclosureRadius = env.enclosureRadius;
     if (env.pondCenter) this.pondCenter.copy(env.pondCenter);
     if (typeof env.pondRadius === 'number') this.pondRadius = env.pondRadius;
+
+    this.sizeScale = Math.max(0.25, this.enclosureRadius / 10);
+    this.obstaclePadding = 0.6 * this.sizeScale;
+    this.lookAheadDistance = 2.3 * this.sizeScale;
+    this.drinkApproachDistance = 0.8 * this.sizeScale;
   }
 
   /**
@@ -206,7 +212,7 @@ export class ElephantLocomotion {
     this.tempVec.copy(root.position).sub(this.pondCenter);
     this.tempVec.y = 0;
     const distance = this.tempVec.length();
-    const drinkZone = this.pondRadius + 2.2;
+    const drinkZone = this.pondRadius + 2.2 * this.sizeScale;
 
     if (distance < drinkZone) {
       this.setState('drink');

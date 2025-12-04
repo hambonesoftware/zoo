@@ -13,9 +13,10 @@ export class ElephantPen {
     this.options = options;
     this.label = 'Elephant';
 
-    this.radius = options.radius || 10.0;
+    this.radius = options.radius || 40.0;
+    this.scaleFactor = this.radius / 10.0;
     this.position = options.position || new THREE.Vector3(0, 0, 0);
-    this.pondRadius = options.pondRadius || 2.2;
+    this.pondRadius = options.pondRadius || 2.2 * this.scaleFactor;
     this.groundHeight = 0;
     this.obstacles = [];
 
@@ -76,11 +77,15 @@ export class ElephantPen {
     // around the water unless deliberately entering the drink state.
     this.obstacles.push({
       position: this.pondPosition.clone(),
-      radius: this.pondRadius + 0.55,
+      radius: this.pondRadius + 0.55 * this.scaleFactor,
       type: 'water'
     });
 
-    const pondRimGeo = new THREE.RingGeometry(this.pondRadius * 0.95, this.pondRadius + 0.3, 48);
+    const pondRimGeo = new THREE.RingGeometry(
+      this.pondRadius * 0.95,
+      this.pondRadius + 0.3 * this.scaleFactor,
+      48
+    );
     const pondRimMat = new THREE.MeshStandardMaterial({ color: 0x6d5b3b, roughness: 0.9, side: THREE.DoubleSide });
     const pondRim = new THREE.Mesh(pondRimGeo, pondRimMat);
     pondRim.rotation.x = -Math.PI / 2;
@@ -117,10 +122,11 @@ export class ElephantPen {
     sunLight.target = lightTarget;
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(2048, 2048);
-    sunLight.shadow.camera.left = -this.radius;
-    sunLight.shadow.camera.right = this.radius;
-    sunLight.shadow.camera.top = this.radius;
-    sunLight.shadow.camera.bottom = -this.radius;
+    const shadowRadius = this.radius * 1.1;
+    sunLight.shadow.camera.left = -shadowRadius;
+    sunLight.shadow.camera.right = shadowRadius;
+    sunLight.shadow.camera.top = shadowRadius;
+    sunLight.shadow.camera.bottom = -shadowRadius;
     sunLight.name = 'ElephantSunLight';
     this.group.add(sunLight);
 
@@ -192,7 +198,8 @@ export class ElephantPen {
     // Optional debug helpers
     if (options.debugPen) {
       const gridSize = this.radius * 2.2;
-      const grid = new THREE.GridHelper(gridSize, 32, 0x444444, 0x888888);
+      const gridDivisions = Math.max(32, Math.round(32 * this.scaleFactor));
+      const grid = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x888888);
       grid.position.y = 0.02;
       this.group.add(grid);
 
@@ -240,21 +247,25 @@ export class ElephantPen {
 
     this.obstacles.push({
       position: log.position.clone(),
-      radius: 1.9,
+      radius: 1.9 * this.scaleFactor,
       type: 'log'
     });
   }
 
   _addPerimeterPosts() {
-    const postCount = 18;
+    const fenceOffset = 0.2 * this.scaleFactor;
+    const postRadius = this.radius + fenceOffset;
+    const circumference = Math.PI * 2 * postRadius;
+    const desiredSpacing = 3.4;
+    const postCount = Math.max(12, Math.round(circumference / desiredSpacing));
     const postHeight = 0.4;
     const postGeo = new THREE.CylinderGeometry(0.07, 0.09, postHeight, 8);
     const postMat = new THREE.MeshStandardMaterial({ color: 0x5b4a35, roughness: 0.85 });
 
     for (let i = 0; i < postCount; i += 1) {
       const angle = (i / postCount) * Math.PI * 2;
-      const x = Math.cos(angle) * (this.radius + 0.2);
-      const z = Math.sin(angle) * (this.radius + 0.2);
+      const x = Math.cos(angle) * postRadius;
+      const z = Math.sin(angle) * postRadius;
       const post = new THREE.Mesh(postGeo, postMat);
       post.position.set(x, postHeight / 2, z);
       post.castShadow = true;
@@ -263,7 +274,12 @@ export class ElephantPen {
       this.group.add(post);
     }
 
-    const ropeGeo = new THREE.TorusGeometry(this.radius + 0.2, 0.015, 6, 80);
+    const ropeGeo = new THREE.TorusGeometry(
+      postRadius,
+      0.015 * this.scaleFactor,
+      6,
+      Math.max(48, Math.round(80 * this.scaleFactor))
+    );
     const ropeMat = new THREE.MeshStandardMaterial({ color: 0x9b855c, roughness: 0.6 });
     const rope = new THREE.Mesh(ropeGeo, ropeMat);
     rope.rotation.x = Math.PI / 2;
