@@ -28,7 +28,10 @@ export class GorillaCreature extends THREE.Group {
 
     this.add(mesh);
 
-    const showSkeleton = options.showSkeleton !== false;
+    const debugShowSkeleton =
+      options.debug === true ||
+      (options.debug && typeof options.debug === 'object' && options.debug.showSkeleton === true);
+    const showSkeleton = options.showSkeleton === true || debugShowSkeleton;
     if (showSkeleton) {
       this.skeletonHelper = new THREE.SkeletonHelper(rootBone);
       this.skeletonHelper.skeleton = this.skeleton;
