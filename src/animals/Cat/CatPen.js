@@ -286,7 +286,7 @@ export class CatPen {
 
     // Optional external control: set showBoundingBox:false to hide in hero shots.
     this.bboxHelper.visible =
-      options.showBoundingBox !== undefined ? !!options.showBoundingBox : true;
+      options.showBoundingBox !== undefined ? !!options.showBoundingBox : false;
 
     this.group.add(this.bboxHelper);
 

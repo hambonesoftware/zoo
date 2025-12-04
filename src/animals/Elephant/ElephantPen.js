@@ -186,7 +186,7 @@ export class ElephantPen {
     this.bboxHelper.material.opacity = 0.35;
     this.bboxHelper.name = 'ElephantBBoxHelper';
     this.bboxHelper.visible =
-      options.showBoundingBox !== undefined ? !!options.showBoundingBox : true;
+      options.showBoundingBox !== undefined ? !!options.showBoundingBox : false;
     this.group.add(this.bboxHelper);
 
     // Optional debug helpers
