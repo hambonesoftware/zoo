@@ -34,6 +34,7 @@ export class ElephantLocomotion {
 
     // Base speed. Over time we can tween this for acceleration/deceleration
     this.walkSpeed = 0.6; // world units per second (adjust to taste)
+    this._gaitFrequency = this.walkSpeed * 1.05;
 
     // Base height offset for the root (hips). Elephant body is big/heavy;
     // we keep it fairly low and bob it gently up and down while walking.
@@ -408,9 +409,9 @@ export class ElephantLocomotion {
     this.curiousBlend = THREE.MathUtils.damp(this.curiousBlend, curiousTarget, 2.0, dt);
 
     // Gait phase: only advance when walking/wandering
+    this._gaitFrequency = this.walkSpeed * 1.05;
     if (this.walkBlend > 0.001) {
-      const phaseSpeed = this.walkSpeed * 1.3; // scales stepping frequency
-      this.gaitPhase = (this.gaitPhase + dt * phaseSpeed) % 1.0;
+      this.gaitPhase = (this.gaitPhase + dt * this._gaitFrequency) % 1.0;
     }
 
     // Apply the correct locomotion behavior for each state
@@ -990,23 +991,24 @@ export class ElephantLocomotion {
     this.turnToward(desiredDirection, dt, 3.0);
 
     // Body bobbing and weight shift: more pronounced than idle
-    const bob = Math.sin((this.gaitPhase * TWO_PI) * 2.0) * 0.07 * this.walkBlend;
-    const sway = Math.sin((this.gaitPhase + 0.25) * TWO_PI) * 0.035 * this.walkBlend;
+    const bob = Math.sin((this.gaitPhase * TWO_PI) * 2.0) * 0.045 * this.walkBlend;
+    const sway = Math.sin((this.gaitPhase + 0.25) * TWO_PI) * 0.02 * this.walkBlend;
     root.position.y = this.baseHeight + bob;
     root.position.x = sway;
 
-    // Forward motion: accelerate/decelerate via walkBlend
-    const speed = this.walkSpeed * this.walkBlend;
-    this.moveForward(root, speed, dt);
+    // Forward motion: match stride length to gait rate so feet do not slide
+    const strideLength = 0.26 * this.sizeScale;
+    const gaitSpeed = strideLength * this._gaitFrequency * this.walkBlend * 0.95;
+    this.moveForward(root, gaitSpeed, dt);
     this.keepWithinBounds(root);
 
     const yaw = Math.atan2(this.direction.x, this.direction.z);
     root.rotation.y = THREE.MathUtils.damp(root.rotation.y, yaw, 6.0, dt);
 
     // Small forward lean at peak of step
-    const leanForward = Math.sin(this.gaitPhase * TWO_PI) * 0.12 * this.walkBlend;
+    const leanForward = Math.sin(this.gaitPhase * TWO_PI) * 0.08 * this.walkBlend;
     // And side-to-side roll from weight shift
-    const roll = Math.sin(this.gaitPhase * TWO_PI * 2) * 0.06 * this.walkBlend;
+    const roll = Math.sin(this.gaitPhase * TWO_PI * 2) * 0.04 * this.walkBlend;
     root.rotation.x = leanForward;
     root.rotation.z = roll;
 
@@ -1037,8 +1039,8 @@ export class ElephantLocomotion {
 
     const basePhase = (phase % 1 + 1) % 1;
 
-    const baseStride = 0.35 * this.sizeScale * this.walkBlend;
-    const baseLift   = 0.22 * this.sizeScale * this.walkBlend;
+    const baseStride = 0.26 * this.sizeScale * this.walkBlend;
+    const baseLift   = 0.14 * this.sizeScale * this.walkBlend;
 
     // Phase offsets for a lateral sequence: FL -> BL -> FR -> BR
     this._poseLegWalk('FL', basePhase + 0.0,  baseStride * 1.0,  baseLift * 1.0);
