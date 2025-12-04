@@ -72,6 +72,7 @@ export class ElephantLocomotion {
     // Reusable temp vectors
     this.tempVec = new THREE.Vector3();
     this.tempVec2 = new THREE.Vector3();
+    this._ikTarget = new THREE.Vector3();
 
     // Internal timers
     this._stateTime = 0;
@@ -92,6 +93,13 @@ export class ElephantLocomotion {
       ears:  { angle: 0, velocity: 0 },
       tail:  { angle: 0, velocity: 0 }
     };
+
+    // IK leg chains and ground calibration
+    this.legs = {};
+    this._initializedIK = false;
+    this._rootInitialY = null;
+    this.groundHeight = 0;
+    this._groundCalibrated = false;
   }
 
   setEnvironment(env) {
@@ -99,15 +107,277 @@ export class ElephantLocomotion {
 
     if (!env) return;
 
+    if (typeof env.groundHeight === 'number') {
+      this.groundHeight = env.groundHeight;
+      this._groundCalibrated = false;
+    }
+
     if (env.enclosureCenter) this.enclosureCenter.copy(env.enclosureCenter);
     if (typeof env.enclosureRadius === 'number') this.enclosureRadius = env.enclosureRadius;
     if (env.pondCenter) this.pondCenter.copy(env.pondCenter);
     if (typeof env.pondRadius === 'number') this.pondRadius = env.pondRadius;
 
+    // Scale step lengths and avoidance radii with enclosure size so a larger pen
+    // gives the elephant room to take proportionally larger steps.
     this.sizeScale = Math.max(0.25, this.enclosureRadius / 10);
     this.obstaclePadding = 0.6 * this.sizeScale;
     this.lookAheadDistance = 2.3 * this.sizeScale;
     this.drinkApproachDistance = 0.8 * this.sizeScale;
+
+    // Re-calibrate IK next frame because the effective leg lengths vs. ground
+    // may need to change when the environment changes.
+    this._initializedIK = false;
+  }
+
+  // ------------------------------------------------------
+  // IK SETUP & HELPERS
+  // ------------------------------------------------------
+
+  /**
+   * Initialize leg chains and calibrate the base height so that the elephant's
+   * feet rest on the ground plane (groundHeight) in the current pen.
+   *
+   * We only do this once the mesh & bones are available, and again whenever
+   * the environment changes enough to invalidate the calibration.
+   */
+  _initializeFromRestPose() {
+    if (!this.elephant || !this.elephant.bones || !this.elephant.mesh) return;
+    if (this._initializedIK && this._groundCalibrated) return;
+
+    const bones = this.elephant.bones;
+    const mesh = this.elephant.mesh;
+    const root = bones['spine_base'];
+    if (!root) return;
+
+    // Remember the original root height the first time we calibrate so we can
+    // preserve the relative offset between the hips and the feet.
+    if (this._rootInitialY === null) {
+      this._rootInitialY = root.position.y;
+    }
+
+    // Build IK leg chains from the current bind pose.
+    this._initLegChains();
+
+    // Ensure world matrices & bounding box are up to date.
+    mesh.updateMatrixWorld(true);
+
+    // Use the visual mesh bounds to find the lowest point of the elephant.
+    // In practice this is the bottom of the feet in the default pose, so we
+    // treat that as the contact point with the ground plane.
+    const bbox = new THREE.Box3().setFromObject(mesh);
+    const minY = bbox.min.y;
+
+    if (Number.isFinite(minY)) {
+      const offsetFromRoot = this._rootInitialY - minY;
+      this.baseHeight = this.groundHeight + offsetFromRoot;
+      root.position.y = this.baseHeight;
+    }
+
+    this._initializedIK = true;
+    this._groundCalibrated = true;
+  }
+
+  /**
+   * Build simple two-segment IK chains for each leg from the current bones.
+   * We use the "upper" and "lower" leg bones and approximate the foot target
+   * at the end of the lower bone (or its first child if present).
+   */
+  _initLegChains() {
+    const elephant = this.elephant;
+    if (!elephant || !elephant.bones || !elephant.mesh) return;
+
+    const bones = elephant.bones;
+    const mesh = elephant.mesh;
+
+    const legDefs = [
+      { key: 'FL', upper: 'leg_front_L_upper', lower: 'leg_front_L_lower', isFront: true,  isLeft: true  },
+      { key: 'FR', upper: 'leg_front_R_upper', lower: 'leg_front_R_lower', isFront: true,  isLeft: false },
+      { key: 'BL', upper: 'leg_back_L_upper',  lower: 'leg_back_L_lower',  isFront: false, isLeft: true  },
+      { key: 'BR', upper: 'leg_back_R_upper',  lower: 'leg_back_R_lower',  isFront: false, isLeft: false }
+    ];
+
+    const legs = {};
+    const hipWorld   = new THREE.Vector3();
+    const kneeWorld  = new THREE.Vector3();
+    const ankleWorld = new THREE.Vector3();
+    const footLocal  = new THREE.Vector3();
+
+    // Make sure world matrices are fresh before sampling positions.
+    mesh.updateMatrixWorld(true);
+
+    for (const def of legDefs) {
+      const upper = bones[def.upper];
+      const lower = bones[def.lower];
+      if (!upper || !lower) continue;
+
+      upper.getWorldPosition(hipWorld);
+      lower.getWorldPosition(kneeWorld);
+
+      const len1 = hipWorld.distanceTo(kneeWorld);
+
+      // Try to use a child bone as the approximate foot position if one exists.
+      if (lower.children && lower.children.length > 0) {
+        lower.children[0].getWorldPosition(ankleWorld);
+      } else {
+        // Fall back to a point slightly below the lower joint along world -Y.
+        ankleWorld.copy(kneeWorld);
+        ankleWorld.y -= len1 * 0.9;
+      }
+
+      let len2 = kneeWorld.distanceTo(ankleWorld);
+      if (!Number.isFinite(len2) || len2 <= 0.0001) {
+        len2 = len1 * 0.9;
+      }
+
+      // Convert the ankle/foot world position into the upper-bone local space.
+      footLocal.copy(ankleWorld);
+      upper.worldToLocal(footLocal);
+
+      const restDistance = Math.sqrt(footLocal.y * footLocal.y + footLocal.z * footLocal.z);
+
+      legs[def.key] = {
+        ...def,
+        upper,
+        lower,
+        len1: Math.max(len1, 0.001),
+        len2: Math.max(len2, 0.001),
+        restFootLocal: footLocal.clone(),
+        restDistance: restDistance > 0.0001 ? restDistance : (len1 + len2) * 0.7
+      };
+    }
+
+    this.legs = legs;
+  }
+
+  /**
+   * Solve a planar two-segment IK problem for a given leg, interpreting the
+   * leg's local Y/Z plane as the IK plane:
+   *   - local -Y is "down" toward the ground
+   *   - local +Z is "forward" in the elephant's walk direction.
+   *
+   * targetLocal is expressed in the upper-bone's local space.
+   */
+  _solveLegIKFromLocalTarget(leg, targetLocal) {
+    if (!leg || !leg.upper || !leg.lower || !leg.restFootLocal) return;
+
+    const len1 = leg.len1;
+    const len2 = leg.len2;
+    if (!Number.isFinite(len1) || !Number.isFinite(len2)) return;
+
+    // Project into the 2D IK plane (Y/Z of the upper-bone space).
+    let x = targetLocal.z;
+    let y = targetLocal.y;
+
+    let radius = Math.sqrt(x * x + y * y);
+
+    const restDistance = leg.restDistance || (len1 + len2) * 0.7;
+
+    // Keep the target radius near the bind-pose distance so that we do not
+    // over-extend or fully collapse the leg.
+    const minRadius = Math.max(0.2 * restDistance, 0.1 * Math.min(len1, len2));
+    const maxRadius = Math.min(1.3 * restDistance, 0.95 * (len1 + len2));
+    const clampedRadius = THREE.MathUtils.clamp(radius, minRadius, maxRadius);
+
+    if (radius < 1e-5) {
+      // Too close to the hip: just leave the current joint angles.
+      return;
+    }
+
+    if (Math.abs(clampedRadius - radius) > 1e-5) {
+      const scale = clampedRadius / radius;
+      x *= scale;
+      y *= scale;
+      radius = clampedRadius;
+    }
+
+    const radiussq = radius * radius;
+
+    // Angle from local -Y axis to the target in the Y/Z plane.
+    const theta = Math.atan2(x, -y);
+
+    const denom = -2 * len1 * len2;
+    let acosArg = (radiussq - len1 * len1 - len2 * len2) / denom;
+    acosArg = THREE.MathUtils.clamp(acosArg, -1, 1);
+
+    const elbowSupplement = Math.acos(acosArg);
+
+    let sinTerm = len2 * Math.sin(elbowSupplement) / radius;
+    sinTerm = THREE.MathUtils.clamp(sinTerm, -1, 1);
+    const alpha = Math.asin(sinTerm);
+
+    // Use the "elbow-back" configuration for all legs so the knees bend in a
+    // natural direction for a heavy quadruped.
+    const q0 = theta - alpha;
+    const q1 = Math.PI - elbowSupplement;
+
+    if (Number.isFinite(q0)) {
+      leg.upper.rotation.x = -q0;
+    }
+    if (Number.isFinite(q1)) {
+      leg.lower.rotation.x = -q1;
+    }
+  }
+
+  /**
+   * Helper: subtle idle pose where each foot stays very close to its bind
+   * position but shifts a little to keep the elephant from looking frozen.
+   */
+  _poseLegIdle(legKey, t, radius, lift) {
+    if (!this.legs) return;
+    const leg = this.legs[legKey];
+    if (!leg || !leg.restFootLocal) return;
+
+    const base = leg.restFootLocal;
+    const target = this._ikTarget;
+    target.copy(base);
+
+    let phaseOffset = 0;
+    switch (legKey) {
+      case 'FL': phaseOffset = 0.0; break;
+      case 'FR': phaseOffset = 0.6; break;
+      case 'BL': phaseOffset = 0.3; break;
+      case 'BR': phaseOffset = 0.9; break;
+      default: break;
+    }
+
+    const p = t * 0.8 + phaseOffset;
+
+    // Tiny forward/back & vertical motion.
+    target.z += Math.sin(p * 1.2) * radius;
+    target.y += Math.sin(p * 1.7) * lift;
+
+    this._solveLegIKFromLocalTarget(leg, target);
+  }
+
+  /**
+   * Helper: walking pose, where the foot moves through a smooth arc in the
+   * Y/Z plane while the IK solver handles the actual joint angles.
+   */
+  _poseLegWalk(legKey, phase, stepLength, liftHeight) {
+    if (!this.legs) return;
+    const leg = this.legs[legKey];
+    if (!leg || !leg.restFootLocal) return;
+
+    const base = leg.restFootLocal;
+    const target = this._ikTarget;
+    target.copy(base);
+
+    const TWO_PI = Math.PI * 2;
+    let u = phase % 1;
+    if (u < 0) u += 1;
+
+    // Use a simple sinusoidal stride: s < 0 is stance, s > 0 is swing.
+    const s = Math.sin(u * TWO_PI);
+
+    // Forward/back along local Z relative to the bind-pose position.
+    target.z = base.z + stepLength * s;
+
+    // Vertical lift only during the swing phase so feet stay on the ground
+    // while in stance.
+    const liftPhase = Math.max(0, s);
+    target.y = base.y + liftHeight * liftPhase;
+
+    this._solveLegIKFromLocalTarget(leg, target);
   }
 
   /**
@@ -121,6 +391,13 @@ export class ElephantLocomotion {
     const mesh = this.elephant.mesh;
 
     if (!root || !mesh) return;
+
+    // Initialize IK leg chains and ground offset lazily once the mesh & bones
+    // are available (and whenever the environment changes).
+    if (!this._initializedIK || !this._groundCalibrated) {
+      this._initializeFromRestPose();
+    }
+
     this.ensureDirectionNormalized();
 
     // Advance time
@@ -642,31 +919,23 @@ export class ElephantLocomotion {
   }
 
   /**
-   * Basic idle leg pose with subtle micro-motion.
+   * IK-driven idle: keep the feet essentially in place but add a soft
+   * micro-motion so the elephant gently shifts its weight.
    */
   applyLegIdle(bones, t) {
-    const legFLU = bones['leg_front_L_upper'];
-    const legFLL = bones['leg_front_L_lower'];
-    const legFRU = bones['leg_front_R_upper'];
-    const legFRL = bones['leg_front_R_lower'];
-    const legBLU = bones['leg_back_L_upper'];
-    const legBLL = bones['leg_back_L_lower'];
-    const legBRU = bones['leg_back_R_upper'];
-    const legBRL = bones['leg_back_R_lower'];
+    // IK-driven idle: keep the feet essentially in place but add a soft
+    // micro-motion so the elephant gently shifts its weight.
+    if (!this.legs || Object.keys(this.legs).length === 0) {
+      return;
+    }
 
-    const micro = Math.sin(t * 1.5) * 0.05;
+    const baseRadius = 0.04 * this.sizeScale;
+    const baseLift   = 0.02 * this.sizeScale;
 
-    if (legFLU) legFLU.rotation.x = 0.05 + micro * 0.4;
-    if (legFLL) legFLL.rotation.x = -0.05 + micro * 0.4;
-
-    if (legFRU) legFRU.rotation.x = 0.02 - micro * 0.3;
-    if (legFRL) legFRL.rotation.x = -0.02 - micro * 0.3;
-
-    if (legBLU) legBLU.rotation.x = -0.03 + micro * 0.5;
-    if (legBLL) legBLL.rotation.x = 0.03 + micro * 0.4;
-
-    if (legBRU) legBRU.rotation.x = -0.05 - micro * 0.5;
-    if (legBRL) legBRL.rotation.x = 0.05 - micro * 0.4;
+    this._poseLegIdle('FL', t,          baseRadius * 1.0,  baseLift * 1.0);
+    this._poseLegIdle('FR', t + 0.6,    baseRadius * 0.9,  baseLift * 0.9);
+    this._poseLegIdle('BL', t + 0.3,    baseRadius * 1.05, baseLift * 1.05);
+    this._poseLegIdle('BR', t + 0.9,    baseRadius * 0.95, baseLift * 0.95);
   }
 
   /**
@@ -753,7 +1022,7 @@ export class ElephantLocomotion {
     root.rotation.x = leanForward;
     root.rotation.z = roll;
 
-    // Leg stepping pattern (lateral sequence)
+    // Leg stepping pattern (lateral sequence) via IK.
     this.applyLegWalk(bones, this.gaitPhase);
 
     // Trunk sway & dip while walking
@@ -764,52 +1033,30 @@ export class ElephantLocomotion {
   }
 
   /**
-   * Lateral-sequence walk:
-   * - front left, rear left, front right, rear right
-   * We approximate with phase offsets for each leg.
+   * IK-driven lateral-sequence gait. Each leg gets a phase-offset stride
+   * that keeps at least two legs planted at all times for a heavy, stable
+   * walk. Step length and lift scale with the enclosure size so a larger
+   * pen allows longer strides.
    */
   applyLegWalk(bones, phase) {
-    const TWO_PI = Math.PI * 2;
+    // IK-driven lateral-sequence gait. Each leg gets a phase-offset stride
+    // that keeps at least two legs planted at all times for a heavy, stable
+    // walk. Step length and lift scale with the enclosure size so a larger
+    // pen allows longer strides.
+    if (!this.legs || Object.keys(this.legs).length === 0) {
+      return;
+    }
 
-    const legFLU = bones['leg_front_L_upper'];
-    const legFLL = bones['leg_front_L_lower'];
-    const legFRU = bones['leg_front_R_upper'];
-    const legFRL = bones['leg_front_R_lower'];
-    const legBLU = bones['leg_back_L_upper'];
-    const legBLL = bones['leg_back_L_lower'];
-    const legBRU = bones['leg_back_R_upper'];
-    const legBRL = bones['leg_back_R_lower'];
+    const basePhase = (phase % 1 + 1) % 1;
 
-    const amplitudeFront = 0.55;
-    const amplitudeBack  = 0.65;
-    const kneeBendFactor = 0.75;
+    const baseStride = 0.35 * this.sizeScale * this.walkBlend;
+    const baseLift   = 0.22 * this.sizeScale * this.walkBlend;
 
-    // Phase offsets for each leg
-    const phaseFL = phase;
-    const phaseBL = (phase + 0.25) % 1;
-    const phaseFR = (phase + 0.5) % 1;
-    const phaseBR = (phase + 0.75) % 1;
-
-    const swing = (p, amp) => Math.sin(p * TWO_PI) * amp;
-    const knee  = (p, factor) => Math.max(0, -Math.sin(p * TWO_PI)) * factor;
-    const stance = (p) => Math.max(0, Math.cos(p * TWO_PI)) ** 2;
-    const lift = (p) => Math.max(0, Math.sin(p * TWO_PI)) ** 1.5;
-
-    // Front Left
-    if (legFLU) legFLU.rotation.x = swing(phaseFL, amplitudeFront * 0.95) - stance(phaseFL) * amplitudeFront * 0.18;
-    if (legFLL) legFLL.rotation.x = knee(phaseFL, kneeBendFactor) + lift(phaseFL) * 0.1;
-
-    // Back Left
-    if (legBLU) legBLU.rotation.x = swing(phaseBL, amplitudeBack) - stance(phaseBL) * amplitudeBack * 0.22;
-    if (legBLL) legBLL.rotation.x = knee(phaseBL, kneeBendFactor * 1.1) + lift(phaseBL) * 0.12;
-
-    // Front Right
-    if (legFRU) legFRU.rotation.x = swing(phaseFR, amplitudeFront) - stance(phaseFR) * amplitudeFront * 0.18;
-    if (legFRL) legFRL.rotation.x = knee(phaseFR, kneeBendFactor) + lift(phaseFR) * 0.1;
-
-    // Back Right
-    if (legBRU) legBRU.rotation.x = swing(phaseBR, amplitudeBack * 1.05) - stance(phaseBR) * amplitudeBack * 0.24;
-    if (legBRL) legBRL.rotation.x = knee(phaseBR, kneeBendFactor * 1.05) + lift(phaseBR) * 0.14;
+    // Phase offsets for a lateral sequence: FL -> BL -> FR -> BR
+    this._poseLegWalk('FL', basePhase + 0.0,  baseStride * 1.0,  baseLift * 1.0);
+    this._poseLegWalk('BL', basePhase + 0.25, baseStride * 0.95, baseLift * 1.05);
+    this._poseLegWalk('FR', basePhase + 0.5,  baseStride * 1.0,  baseLift * 1.0);
+    this._poseLegWalk('BR', basePhase + 0.75, baseStride * 0.95, baseLift * 1.05);
   }
 
   /**
