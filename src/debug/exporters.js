@@ -41,3 +41,26 @@ export function downloadAsOBJ(object3D, filename) {
 
   console.log('[downloadAsOBJ] Exported OBJ:', filename);
 }
+
+/**
+ * Download arbitrary JSON payload with the provided filename.
+ * @param {Object} data JSON-serializable object to download.
+ * @param {string} filename Target filename, e.g. "elephant_tuning.json".
+ */
+export function downloadAsJSON(data, filename) {
+  try {
+    const text = JSON.stringify(data, null, 2);
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    console.log('[downloadAsJSON] Exported', filename);
+  } catch (error) {
+    console.error('[downloadAsJSON] Failed to export JSON', error);
+  }
+}

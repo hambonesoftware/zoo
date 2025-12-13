@@ -5,6 +5,7 @@ import { ElephantCreature } from './ElephantCreature.js';
 import { ElephantDefinition } from './ElephantDefinition.js';
 
 const DEFAULT_Y_OFFSET = 1.37; // padHeight (0.17) + elephant base height (~1.2)
+const TUNING_SCHEMA_VERSION = '1.0.0';
 
 const LIMB_KEYS = ['frontLeft', 'frontRight', 'backLeft', 'backRight'];
 
@@ -303,7 +304,12 @@ export const ElephantModule = {
     return base;
   },
 
+  getTuningSchemaVersion() {
+    return TUNING_SCHEMA_VERSION;
+  },
+
   getTuningSchema() {
+    const defaults = this.getDefaultTuning();
     const limbLabels = {
       frontLeft: 'Front Left',
       frontRight: 'Front Right',
@@ -311,248 +317,447 @@ export const ElephantModule = {
       backRight: 'Back Right'
     };
 
+    const make = (key, { label, group = 'Global', order = 0, tier = 'A', type = 'float', groupOrder, ...rest }) => ({
+      label,
+      group,
+      groupOrder,
+      order,
+      tier,
+      type,
+      default: defaults[key],
+      ...rest
+    });
+
     const schema = {
-      'global.scale': { min: 0.5, max: 1.2, step: 0.01, label: 'Global Scale' },
-      'global.rotateY': {
+      'global.scale': make('global.scale', {
+        label: 'Global Scale',
+        min: 0.5,
+        max: 1.2,
+        step: 0.01,
+        order: 0,
+        tier: 'A',
+        format: 3
+      }),
+      'global.rotateY': make('global.rotateY', {
+        label: 'Rotate Y',
         min: -Math.PI,
         max: Math.PI,
         step: 0.01,
-        label: 'Rotate Y'
-      },
-      lowPoly: { type: 'boolean', label: 'Low Poly' },
-      'debug.showSkeleton': { type: 'boolean', label: 'Show Skeleton' },
-      'debugRings.enabled': { type: 'boolean', label: 'Rings: Enabled' },
-      'debugRings.global.radiusScale': {
+        order: 1,
+        tier: 'A',
+        format: 3
+      }),
+      lowPoly: make('lowPoly', {
+        label: 'Low Poly',
+        type: 'boolean',
+        group: 'Materials',
+        groupOrder: 4,
+        order: 0,
+        tier: 'B'
+      }),
+      bodyColor: make('bodyColor', {
+        label: 'Body Color Hue',
+        min: -1,
+        max: 1,
+        step: 0.01,
+        type: 'float',
+        group: 'Materials',
+        groupOrder: 4,
+        order: 1,
+        tier: 'B',
+        format: 2
+      }),
+      variantSeed: make('variantSeed', {
+        label: 'Variant Seed',
+        type: 'int',
+        min: 0,
+        max: 9999,
+        step: 1,
+        group: 'Advanced',
+        groupOrder: 5,
+        order: 1,
+        tier: 'B',
+        advanced: true
+      }),
+      'debug.showSkeleton': make('debug.showSkeleton', {
+        label: 'Show Skeleton',
+        type: 'boolean',
+        group: 'Debug',
+        groupOrder: 6,
+        order: 0,
+        tier: 'A',
+        advanced: true
+      }),
+      'debugRings.enabled': make('debugRings.enabled', {
+        label: 'Rings: Enabled',
+        type: 'boolean',
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 0,
+        tier: 'A',
+        advanced: true
+      }),
+      'debugRings.global.radiusScale': make('debugRings.global.radiusScale', {
+        label: 'Rings Radius ×',
         min: 0.25,
         max: 2,
         step: 0.01,
-        label: 'Rings Radius ×'
-      },
-      'debugRings.global.thickness': {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 1,
+        tier: 'A',
+        advanced: true
+      }),
+      'debugRings.global.thickness': make('debugRings.global.thickness', {
+        label: 'Rings Thickness',
         min: 0.005,
         max: 0.3,
         step: 0.005,
-        label: 'Rings Thickness'
-      },
-      'debugRings.global.offsetX': {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 2,
+        tier: 'A',
+        advanced: true
+      }),
+      'debugRings.global.offsetX': make('debugRings.global.offsetX', {
+        label: 'Rings Offset X',
         min: -0.5,
         max: 0.5,
         step: 0.01,
-        label: 'Rings Offset X'
-      },
-      'debugRings.global.offsetY': {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 3,
+        tier: 'A',
+        advanced: true
+      }),
+      'debugRings.global.offsetY': make('debugRings.global.offsetY', {
+        label: 'Rings Offset Y',
         min: -0.5,
         max: 0.5,
         step: 0.01,
-        label: 'Rings Offset Y'
-      },
-      'debugRings.global.offsetZ': {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 4,
+        tier: 'A',
+        advanced: true
+      }),
+      'debugRings.global.offsetZ': make('debugRings.global.offsetZ', {
+        label: 'Rings Offset Z',
         min: -0.5,
         max: 0.5,
         step: 0.01,
-        label: 'Rings Offset Z'
-      },
-      'debugRings.global.opacity': {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 5,
+        tier: 'A',
+        advanced: true
+      }),
+      'debugRings.global.opacity': make('debugRings.global.opacity', {
+        label: 'Rings Opacity',
         min: 0.1,
         max: 1,
         step: 0.01,
-        label: 'Rings Opacity'
-      },
-      'skeleton.front.upperLenScale': {
-        min: 0.5,
-        max: 1.6,
-        step: 0.01,
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 6,
+        tier: 'A',
+        advanced: true
+      }),
+      'skeleton.front.upperLenScale': make('skeleton.front.upperLenScale', {
         label: 'Front Upper Len ×',
-        group: 'Skeleton / Front Legs'
-      },
-      'skeleton.front.lowerLenScale': {
         min: 0.5,
         max: 1.6,
         step: 0.01,
+        group: 'Skeleton / Front Legs',
+        groupOrder: 2,
+        order: 0,
+        tier: 'B'
+      }),
+      'skeleton.front.lowerLenScale': make('skeleton.front.lowerLenScale', {
         label: 'Front Lower Len ×',
-        group: 'Skeleton / Front Legs'
-      },
-      'skeleton.front.footLenScale': {
         min: 0.5,
         max: 1.6,
         step: 0.01,
+        group: 'Skeleton / Front Legs',
+        groupOrder: 2,
+        order: 1,
+        tier: 'B'
+      }),
+      'skeleton.front.footLenScale': make('skeleton.front.footLenScale', {
         label: 'Front Foot Len ×',
-        group: 'Skeleton / Front Legs'
-      },
-      'skeleton.back.upperLenScale': {
         min: 0.5,
         max: 1.6,
         step: 0.01,
+        group: 'Skeleton / Front Legs',
+        groupOrder: 2,
+        order: 2,
+        tier: 'B'
+      }),
+      'skeleton.back.upperLenScale': make('skeleton.back.upperLenScale', {
         label: 'Back Upper Len ×',
-        group: 'Skeleton / Back Legs'
-      },
-      'skeleton.back.lowerLenScale': {
         min: 0.5,
         max: 1.6,
         step: 0.01,
+        group: 'Skeleton / Back Legs',
+        groupOrder: 3,
+        order: 0,
+        tier: 'B'
+      }),
+      'skeleton.back.lowerLenScale': make('skeleton.back.lowerLenScale', {
         label: 'Back Lower Len ×',
-        group: 'Skeleton / Back Legs'
-      },
-      'skeleton.back.footLenScale': {
         min: 0.5,
         max: 1.6,
         step: 0.01,
+        group: 'Skeleton / Back Legs',
+        groupOrder: 3,
+        order: 1,
+        tier: 'B'
+      }),
+      'skeleton.back.footLenScale': make('skeleton.back.footLenScale', {
         label: 'Back Foot Len ×',
-        group: 'Skeleton / Back Legs'
-      },
-      'skeleton.spineLenScale': {
         min: 0.5,
-        max: 1.5,
+        max: 1.6,
         step: 0.01,
+        group: 'Skeleton / Back Legs',
+        groupOrder: 3,
+        order: 2,
+        tier: 'B'
+      }),
+      'skeleton.spineLenScale': make('skeleton.spineLenScale', {
         label: 'Spine Len ×',
-        group: 'Skeleton / Body'
-      },
-      'skeleton.neckLenScale': {
         min: 0.5,
         max: 1.5,
         step: 0.01,
+        group: 'Skeleton / Body',
+        groupOrder: 1,
+        order: 0,
+        tier: 'B'
+      }),
+      'skeleton.neckLenScale': make('skeleton.neckLenScale', {
         label: 'Neck Len ×',
-        group: 'Skeleton / Body'
-      },
-      'skeleton.headScale': {
+        min: 0.5,
+        max: 1.5,
+        step: 0.01,
+        group: 'Skeleton / Body',
+        groupOrder: 1,
+        order: 1,
+        tier: 'B'
+      }),
+      'skeleton.headScale': make('skeleton.headScale', {
+        label: 'Head Scale',
         min: 0.6,
         max: 1.6,
         step: 0.01,
-        label: 'Head Scale',
-        group: 'Skeleton / Body'
-      },
-      'skeleton.trunkLenScale': {
+        group: 'Skeleton / Body',
+        groupOrder: 1,
+        order: 2,
+        tier: 'B'
+      }),
+      'skeleton.trunkLenScale': make('skeleton.trunkLenScale', {
+        label: 'Trunk Len ×',
         min: 0.5,
         max: 1.6,
         step: 0.01,
-        label: 'Trunk Len ×',
-        group: 'Skeleton / Body'
-      },
-      'limbMesh.ringsPerSegment': {
+        group: 'Skeleton / Body',
+        groupOrder: 1,
+        order: 3,
+        tier: 'B'
+      }),
+      'limbMesh.ringsPerSegment': make('limbMesh.ringsPerSegment', {
+        label: 'Limb Rings/Segment',
         type: 'int',
         min: 3,
         max: 32,
         step: 1,
-        label: 'Limb Rings/Segment',
-        group: 'Limb Mesh'
-      },
-      'limbMesh.sides': {
+        group: 'Limb Mesh',
+        groupOrder: 4,
+        order: 0,
+        tier: 'B'
+      }),
+      'limbMesh.sides': make('limbMesh.sides', {
+        label: 'Limb Radial Sides',
         type: 'int',
         min: 6,
         max: 40,
         step: 1,
-        label: 'Limb Radial Sides',
-        group: 'Limb Mesh'
-      },
-      'limbMesh.ringBias': {
+        group: 'Limb Mesh',
+        groupOrder: 4,
+        order: 1,
+        tier: 'B'
+      }),
+      'limbMesh.ringBias': make('limbMesh.ringBias', {
+        label: 'Limb Ring Bias',
         min: -1,
         max: 1,
         step: 0.05,
-        label: 'Limb Ring Bias',
-        group: 'Limb Mesh'
-      },
-      'limbMesh.startT': {
-        min: 0,
-        max: 1,
-        step: 0.01,
+        group: 'Limb Mesh',
+        groupOrder: 4,
+        order: 2,
+        tier: 'B'
+      }),
+      'limbMesh.startT': make('limbMesh.startT', {
         label: 'Limb Ring Start T',
-        group: 'Limb Mesh'
-      },
-      'limbMesh.endT': {
         min: 0,
         max: 1,
         step: 0.01,
+        group: 'Limb Mesh',
+        groupOrder: 4,
+        order: 3,
+        tier: 'B'
+      }),
+      'limbMesh.endT': make('limbMesh.endT', {
         label: 'Limb Ring End T',
-        group: 'Limb Mesh'
-      }
+        min: 0,
+        max: 1,
+        step: 0.01,
+        group: 'Limb Mesh',
+        groupOrder: 4,
+        order: 4,
+        tier: 'B'
+      })
     };
 
     for (const limb of LIMB_KEYS) {
       const label = limbLabels[limb];
-      schema[`debugRings.${limb}.radiusScale`] = {
+      schema[`debugRings.${limb}.radiusScale`] = make(`debugRings.${limb}.radiusScale`, {
+        label: `${label} Radius ×`,
         min: 0.25,
         max: 2,
         step: 0.01,
-        label: `${label} Radius ×`
-      };
-      schema[`debugRings.${limb}.count`] = {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 10,
+        tier: 'A',
+        advanced: true
+      });
+      schema[`debugRings.${limb}.count`] = make(`debugRings.${limb}.count`, {
+        label: `${label} Count`,
         min: 0,
         max: 24,
         step: 1,
-        label: `${label} Count`
-      };
-      schema[`debugRings.${limb}.startT`] = {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 11,
+        tier: 'A',
+        advanced: true
+      });
+      schema[`debugRings.${limb}.startT`] = make(`debugRings.${limb}.startT`, {
+        label: `${label} Start T`,
         min: 0,
         max: 1,
         step: 0.01,
-        label: `${label} Start T`
-      };
-      schema[`debugRings.${limb}.endT`] = {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 12,
+        tier: 'A',
+        advanced: true
+      });
+      schema[`debugRings.${limb}.endT`] = make(`debugRings.${limb}.endT`, {
+        label: `${label} End T`,
         min: 0,
         max: 1,
         step: 0.01,
-        label: `${label} End T`
-      };
-      schema[`debugRings.${limb}.bias`] = {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 13,
+        tier: 'A',
+        advanced: true
+      });
+      schema[`debugRings.${limb}.bias`] = make(`debugRings.${limb}.bias`, {
+        label: `${label} Bias`,
         min: -1,
         max: 1,
         step: 0.05,
-        label: `${label} Bias`
-      };
-      schema[`debugRings.${limb}.offsetX`] = {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 14,
+        tier: 'A',
+        advanced: true
+      });
+      schema[`debugRings.${limb}.offsetX`] = make(`debugRings.${limb}.offsetX`, {
+        label: `${label} Offset X`,
         min: -0.5,
         max: 0.5,
         step: 0.01,
-        label: `${label} Offset X`
-      };
-      schema[`debugRings.${limb}.offsetY`] = {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 15,
+        tier: 'A',
+        advanced: true
+      });
+      schema[`debugRings.${limb}.offsetY`] = make(`debugRings.${limb}.offsetY`, {
+        label: `${label} Offset Y`,
         min: -0.5,
         max: 0.5,
         step: 0.01,
-        label: `${label} Offset Y`
-      };
-      schema[`debugRings.${limb}.offsetZ`] = {
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 16,
+        tier: 'A',
+        advanced: true
+      });
+      schema[`debugRings.${limb}.offsetZ`] = make(`debugRings.${limb}.offsetZ`, {
+        label: `${label} Offset Z`,
         min: -0.5,
         max: 0.5,
         step: 0.01,
-        label: `${label} Offset Z`
-      };
+        group: 'Debug Rings',
+        groupOrder: 7,
+        order: 17,
+        tier: 'A',
+        advanced: true
+      });
 
-      schema[`limbMesh.${limb}.upperRadius`] = {
-        min: 0.2,
-        max: 1,
-        step: 0.01,
+      schema[`limbMesh.${limb}.upperRadius`] = make(`limbMesh.${limb}.upperRadius`, {
         label: `${label} Upper Radius`,
-        group: `Limb Mesh / ${label}`
-      };
-      schema[`limbMesh.${limb}.kneeRadius`] = {
         min: 0.2,
         max: 1,
         step: 0.01,
+        group: `Limb Mesh / ${label}`,
+        groupOrder: 5,
+        order: 0,
+        tier: 'B'
+      });
+      schema[`limbMesh.${limb}.kneeRadius`] = make(`limbMesh.${limb}.kneeRadius`, {
         label: `${label} Knee Radius`,
-        group: `Limb Mesh / ${label}`
-      };
-      schema[`limbMesh.${limb}.ankleRadius`] = {
         min: 0.2,
         max: 1,
         step: 0.01,
+        group: `Limb Mesh / ${label}`,
+        groupOrder: 5,
+        order: 1,
+        tier: 'B'
+      });
+      schema[`limbMesh.${limb}.ankleRadius`] = make(`limbMesh.${limb}.ankleRadius`, {
         label: `${label} Ankle Radius`,
-        group: `Limb Mesh / ${label}`
-      };
-      schema[`limbMesh.${limb}.footRadius`] = {
         min: 0.2,
         max: 1,
         step: 0.01,
+        group: `Limb Mesh / ${label}`,
+        groupOrder: 5,
+        order: 2,
+        tier: 'B'
+      });
+      schema[`limbMesh.${limb}.footRadius`] = make(`limbMesh.${limb}.footRadius`, {
         label: `${label} Foot Radius`,
-        group: `Limb Mesh / ${label}`
-      };
-      schema[`limbMesh.${limb}.footFlare`] = {
+        min: 0.2,
+        max: 1,
+        step: 0.01,
+        group: `Limb Mesh / ${label}`,
+        groupOrder: 5,
+        order: 3,
+        tier: 'B'
+      });
+      schema[`limbMesh.${limb}.footFlare`] = make(`limbMesh.${limb}.footFlare`, {
+        label: `${label} Foot Flare`,
         min: 0.2,
         max: 1.4,
         step: 0.01,
-        label: `${label} Foot Flare`,
-        group: `Limb Mesh / ${label}`
-      };
+        group: `Limb Mesh / ${label}`,
+        groupOrder: 5,
+        order: 4,
+        tier: 'B'
+      });
     }
 
     return schema;

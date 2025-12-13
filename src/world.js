@@ -70,6 +70,11 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
   controls.maxDistance = 25;
   controls.update();
 
+  const defaultCameraState = {
+    position: camera.position.clone(),
+    target: controls.target.clone()
+  };
+
   const pen = new AnimalStudioPen(scene, {});
 
   let activeAnimal = null;
@@ -132,6 +137,10 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
   }
 
   function setAnimalType(animalId, tuningOverrides = {}) {
+    if (rebuildTimer) {
+      clearTimeout(rebuildTimer);
+      rebuildTimer = null;
+    }
     const module = AnimalRegistry[animalId];
     if (!module) {
       console.warn(`[Zoo] Unknown animal module '${animalId}'`);
@@ -155,6 +164,39 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
     return instance;
   }
 
+  function applyImmediateTuning(tuningPatch = {}) {
+    if (!activeModule || !activeAnimal) return;
+    currentTuning = { ...currentTuning, ...tuningPatch };
+    if (typeof activeModule.applyTuning === 'function') {
+      activeModule.applyTuning(activeAnimal, currentTuning);
+    }
+  }
+
+  function scheduleRebuild(tuning = {}, onRebuilt) {
+    if (!activeModule || !activeAnimal) {
+      onRebuilt?.();
+      return;
+    }
+    currentTuning = { ...currentTuning, ...tuning };
+    if (rebuildTimer) {
+      clearTimeout(rebuildTimer);
+    }
+
+    rebuildTimer = setTimeout(() => {
+      rebuildTimer = null;
+      if (typeof activeModule.rebuild === 'function') {
+        const rebuilt = activeModule.rebuild({ renderer, scene, tuning: currentTuning, existing: activeAnimal });
+        if (rebuilt) {
+          activeAnimal = rebuilt;
+          pen.mountAnimal(rebuilt);
+        }
+      } else if (typeof activeModule.applyTuning === 'function') {
+        activeModule.applyTuning(activeAnimal, currentTuning);
+      }
+      onRebuilt?.();
+    }, REBUILD_DEBOUNCE_MS);
+  }
+
   function applyTuning(tuningPatch = {}) {
     if (!activeModule || !activeAnimal) return;
     currentTuning = { ...currentTuning, ...tuningPatch };
@@ -163,22 +205,45 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
       typeof activeModule.shouldRebuildOnChange === 'function' &&
       keys.some((key) => activeModule.shouldRebuildOnChange(key));
 
-    if (wantsRebuild && typeof activeModule.rebuild === 'function') {
-      if (rebuildTimer) {
-        clearTimeout(rebuildTimer);
-      }
-      rebuildTimer = setTimeout(() => {
-        const rebuilt = activeModule.rebuild({ renderer, scene, tuning: currentTuning, existing: activeAnimal });
-        if (rebuilt) {
-          activeAnimal = rebuilt;
-          pen.mountAnimal(rebuilt);
-        }
-      }, REBUILD_DEBOUNCE_MS);
+    if (wantsRebuild) {
+      scheduleRebuild({}, undefined);
+      return;
     }
 
-    if (typeof activeModule.applyTuning === 'function') {
-      activeModule.applyTuning(activeAnimal, currentTuning);
+    applyImmediateTuning({});
+  }
+
+  function frameAnimal() {
+    if (!pen || !pen.animalRoot) return;
+    const box = new THREE.Box3().setFromObject(pen.animalRoot);
+    if (box.isEmpty()) return;
+
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const target = sphere.center;
+    const radius = sphere.radius || 1;
+    const fov = camera.fov * (Math.PI / 180);
+    const distance = (radius / Math.sin(fov / 2)) * 1.15;
+
+    const viewDir = camera.position.clone().sub(controls.target);
+    if (viewDir.lengthSq() === 0) {
+      viewDir.set(1, 0.35, 1);
     }
+    viewDir.normalize();
+
+    const newPosition = target.clone().add(viewDir.multiplyScalar(distance));
+    camera.position.copy(newPosition);
+    controls.target.copy(target);
+    camera.near = Math.max(0.05, distance * 0.02);
+    camera.far = Math.max(camera.far, distance * 10);
+    camera.updateProjectionMatrix();
+    controls.update();
+  }
+
+  function resetCamera() {
+    camera.position.copy(defaultCameraState.position);
+    controls.target.copy(defaultCameraState.target);
+    camera.lookAt(controls.target);
+    controls.update();
   }
 
   function getDebugInfo() {
@@ -220,9 +285,13 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
     pen,
     setAnimalType,
     applyTuning,
+    applyImmediateTuning,
+    scheduleRebuild,
     update,
     getDebugInfo,
     getActivePen: () => pen,
-    getActiveAnimal: () => activeAnimal
+    getActiveAnimal: () => activeAnimal,
+    frameAnimal,
+    resetCamera
   };
 }
