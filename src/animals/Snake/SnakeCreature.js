@@ -28,6 +28,10 @@ export class SnakeCreature {
 
     this.group = new THREE.Group();
     this.group.name = "SnakeCreature";
+    // AnimalStudioPen expects animals to expose a root Object3D. For Cat/Elephant the
+    // creature class itself extends THREE.Group, but this snake uses an inner group, so
+    // wire it up explicitly for compatibility with the shared mounting code.
+    this.root = this.group;
 
     // Build bones
     const skel = buildSnakeSkeleton(def);
