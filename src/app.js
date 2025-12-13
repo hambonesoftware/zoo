@@ -8,7 +8,7 @@ import { AnimalMusicBrain } from './music/AnimalMusicBrain.js';
 import { MUSIC_PROFILES, getProfileForAnimal } from './music/MusicProfiles.js';
 import { MusicEngine } from './music/MusicEngine.js';
 import { NoteHighway } from './ui/NoteHighway.js';
-import { downloadAsOBJ } from './debug/exporters.js';
+import { downloadAsJSON, downloadAsOBJ } from './debug/exporters.js';
 import { TuningPanel } from './ui/TuningPanel.js';
 
 function isWebGPUSupported() {
@@ -37,6 +37,11 @@ class App {
       defaultAnimal: defaultAnimalType
     });
 
+    this.currentTuning = {};
+    this.currentSchema = {};
+    this.tuningHistory = { past: [], future: [], limit: 50 };
+    this.schemaVersion = '1.0.0';
+
     this.scene = this.world.scene;
     this.camera = this.world.camera;
     this.controls = this.world.controls;
@@ -56,7 +61,9 @@ class App {
 
     // UI wiring
     this.setupAnimalDropdown(defaultAnimalType);
+    this.setupCameraShortcuts();
     this.setupTuningPanel(defaultAnimalType);
+    this.setupHistoryShortcuts();
     this.setupDebugPanel();
     this.setupExportHooks();
 
@@ -135,26 +142,37 @@ class App {
       this.world.setAnimalType(type);
       this.syncTuningPanel(type);
     });
+
+    const frameBtn = document.getElementById('zoo-frame');
+    if (frameBtn) {
+      frameBtn.addEventListener('click', () => this.frameAnimal());
+    }
+
+    const resetCamBtn = document.getElementById('zoo-reset-camera');
+    if (resetCamBtn) {
+      resetCamBtn.addEventListener('click', () => this.resetCamera());
+    }
   }
 
   setupTuningPanel(defaultAnimalType) {
     this.tuningPanel = new TuningPanel({
-      onTuningChange: (patch) => {
-        this.world.applyTuning(patch);
+      onTuningChange: (change) => {
+        this.handleTuningChange(change);
+      },
+      onFrame: () => {
+        this.frameAnimal();
+      },
+      onCameraReset: () => {
+        this.resetCamera();
       },
       onReset: () => {
-        const module = AnimalRegistry[this.currentAnimalType];
-        if (!module) return;
-        const defaults = module.getDefaultTuning ? module.getDefaultTuning() : {};
-        this.world.setAnimalType(this.currentAnimalType, defaults);
-        this.tuningPanel.setSchema(module.getTuningSchema?.() || {}, defaults, this.currentAnimalType);
+        this.resetTuningToDefaults();
       },
-      onPresetLoad: (values) => {
-        this.world.setAnimalType(this.currentAnimalType, values);
-        const module = AnimalRegistry[this.currentAnimalType];
-        const schema = module?.getTuningSchema ? module.getTuningSchema() : {};
-        this.tuningPanel.setSchema(schema, values, this.currentAnimalType);
-      }
+      onPresetLoad: (values, name, meta) => {
+        this.applyPreset(values, meta);
+      },
+      onUndo: () => this.undoTuning(),
+      onRedo: () => this.redoTuning()
     });
 
     this.syncTuningPanel(defaultAnimalType);
@@ -164,10 +182,192 @@ class App {
     if (!this.tuningPanel) return;
     const module = AnimalRegistry[animalType];
     if (!module) return;
+    this.schemaVersion = this.getSchemaVersionForAnimal(animalType);
     const schema = module.getTuningSchema ? module.getTuningSchema() : {};
+    this.currentSchema = schema;
     const info = this.world.getDebugInfo ? this.world.getDebugInfo() : {};
     const current = info.tuning || (module.getDefaultTuning ? module.getDefaultTuning() : {});
-    this.tuningPanel.setSchema(schema, current, animalType);
+    const defaults = module.getDefaultTuning ? module.getDefaultTuning() : {};
+    this.currentTuning = { ...current };
+    this.resetHistory(current);
+    this.tuningPanel.setSchema(schema, current, animalType, defaults, this.schemaVersion);
+  }
+
+  handleTuningChange(change) {
+    if (!change) return;
+    const values = change.values || {};
+    const patch = change.patch || {};
+    const prev = { ...this.currentTuning };
+    const next = { ...this.currentTuning, ...values };
+    if (this.areTuningsEqual(this.currentTuning, next)) return;
+
+    this.pushHistory(prev);
+    this.tuningHistory.future = [];
+    this.currentTuning = next;
+
+    const changedKeys = this.diffKeys(prev, next, patch);
+    const hasTierB = changedKeys.some((key) => this.getTierForKey(key) === 'B');
+
+    if (hasTierB) {
+      this.tuningPanel?.setRebuilding(true);
+      this.world.scheduleRebuild(next, () => this.tuningPanel?.setRebuilding(false));
+    } else {
+      this.world.applyImmediateTuning(patch);
+    }
+  }
+
+  diffKeys(prev = {}, next = {}, patch = {}) {
+    const candidateKeys = Object.keys(patch).length
+      ? Object.keys(patch)
+      : Array.from(new Set([...Object.keys(prev), ...Object.keys(next)]));
+    return candidateKeys.filter((key) => prev[key] !== next[key]);
+  }
+
+  buildPatch(prev = {}, next = {}, keys = []) {
+    const patch = {};
+    for (const key of keys) {
+      patch[key] = next[key];
+    }
+    return patch;
+  }
+
+  getTierForKey(key) {
+    const meta = this.currentSchema?.[key];
+    return (meta?.tier || 'A').toUpperCase();
+  }
+
+  areTuningsEqual(a = {}, b = {}) {
+    const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+    for (const key of keys) {
+      if (a[key] !== b[key]) return false;
+    }
+    return true;
+  }
+
+  pushHistory(snapshot = {}) {
+    const past = this.tuningHistory.past;
+    if (past.length && this.areTuningsEqual(past[past.length - 1], snapshot)) return;
+    past.push({ ...snapshot });
+    if (past.length > this.tuningHistory.limit) {
+      past.shift();
+    }
+  }
+
+  resetHistory(current = {}) {
+    this.tuningHistory = { past: [], future: [], limit: 50 };
+    this.currentTuning = { ...current };
+  }
+
+  applySnapshot(snapshot = {}, { recordHistory = true } = {}) {
+    const prev = { ...this.currentTuning };
+    if (this.areTuningsEqual(prev, snapshot)) return;
+
+    if (recordHistory) {
+      this.pushHistory(prev);
+      this.tuningHistory.future = [];
+    }
+
+    this.currentTuning = { ...snapshot };
+    this.tuningPanel?.setValues(this.currentTuning);
+
+    const changedKeys = this.diffKeys(prev, this.currentTuning);
+    const patch = this.buildPatch(prev, this.currentTuning, changedKeys);
+    const hasTierB = changedKeys.some((key) => this.getTierForKey(key) === 'B');
+
+    if (hasTierB) {
+      this.tuningPanel?.setRebuilding(true);
+      this.world.scheduleRebuild(this.currentTuning, () => this.tuningPanel?.setRebuilding(false));
+    } else {
+      this.world.applyImmediateTuning(patch);
+    }
+  }
+
+  undoTuning() {
+    if (!this.tuningHistory.past.length) return;
+    const previous = this.tuningHistory.past.pop();
+    this.tuningHistory.future.push({ ...this.currentTuning });
+    this.applySnapshot(previous, { recordHistory: false });
+  }
+
+  redoTuning() {
+    if (!this.tuningHistory.future.length) return;
+    const next = this.tuningHistory.future.pop();
+    this.tuningHistory.past.push({ ...this.currentTuning });
+    this.applySnapshot(next, { recordHistory: false });
+  }
+
+  resetTuningToDefaults() {
+    const module = AnimalRegistry[this.currentAnimalType];
+    if (!module) return;
+    const defaults = module.getDefaultTuning ? module.getDefaultTuning() : {};
+    this.applySnapshot(defaults);
+    this.tuningPanel?.setSchema(this.currentSchema, defaults, this.currentAnimalType, defaults, this.schemaVersion);
+  }
+
+  applyPreset(values = {}, meta = {}) {
+    const snapshot = { ...values };
+    this.applySnapshot(snapshot);
+    if (meta?.schemaVersion && meta.schemaVersion !== this.schemaVersion) {
+      console.warn('[Zoo] Preset schema version mismatch', {
+        expected: this.schemaVersion,
+        received: meta.schemaVersion
+      });
+    }
+  }
+
+  setupHistoryShortcuts() {
+    this._historyHotkeys = (event) => {
+      const tag = event.target?.tagName || '';
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
+      const isUndo = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey;
+      const isRedo = (event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'y' || (event.shiftKey && event.key.toLowerCase() === 'z'));
+      if (isUndo) {
+        event.preventDefault();
+        this.undoTuning();
+      } else if (isRedo) {
+        event.preventDefault();
+        this.redoTuning();
+      }
+    };
+
+    window.addEventListener('keydown', this._historyHotkeys);
+  }
+
+  getSchemaVersionForAnimal(animalType) {
+    const module = AnimalRegistry[animalType];
+    if (!module) return '1.0.0';
+    if (typeof module.getTuningSchemaVersion === 'function') return module.getTuningSchemaVersion();
+    if (typeof module.tuningSchemaVersion === 'string') return module.tuningSchemaVersion;
+    return '1.0.0';
+  }
+
+  setupCameraShortcuts() {
+    this._cameraHotkeys = (event) => {
+      const tag = event.target?.tagName || '';
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
+      if (event.key === 'f' || event.key === 'F') {
+        event.preventDefault();
+        this.frameAnimal();
+      }
+      if (event.key === 'r' || event.key === 'R') {
+        event.preventDefault();
+        this.resetCamera();
+      }
+    };
+
+    window.addEventListener('keydown', this._cameraHotkeys);
+  }
+
+  frameAnimal() {
+    if (this.world?.frameAnimal) {
+      this.world.frameAnimal();
+    }
+  }
+
+  resetCamera() {
+    if (this.world?.resetCamera) {
+      this.world.resetCamera();
+    }
   }
 
   setupDebugPanel() {
@@ -185,6 +385,8 @@ class App {
         <div>Behavior: <span class="value" id="zoo-debug-behavior">-</span></div>
         <div>State time: <span class="value" id="zoo-debug-state-time">0.000</span></div>
         <button id="zoo-debug-export-obj" type="button">Export OBJ (debug)</button>
+        <button id="zoo-debug-export-tuning" type="button">Export Tuning JSON</button>
+        <button id="zoo-debug-export-preset" type="button">Export Preset Bundle</button>
       `;
       document.body.appendChild(panel);
     }
@@ -200,6 +402,8 @@ class App {
     };
 
     this.debugExportButton = document.getElementById('zoo-debug-export-obj');
+    this.debugTuningExportButton = document.getElementById('zoo-debug-export-tuning');
+    this.debugPresetExportButton = document.getElementById('zoo-debug-export-preset');
   }
 
   setupExportHooks() {
@@ -219,6 +423,18 @@ class App {
         exportCurrentPenAsOBJ(this);
       });
       console.info('[Zoo] Debug OBJ export button initialized.');
+    }
+
+    if (this.debugTuningExportButton) {
+      this.debugTuningExportButton.addEventListener('click', () => {
+        this.exportCurrentTuning();
+      });
+    }
+
+    if (this.debugPresetExportButton) {
+      this.debugPresetExportButton.addEventListener('click', () => {
+        this.exportPresetBundle();
+      });
     }
   }
 
@@ -305,6 +521,32 @@ class App {
         this.debugFields.stateTime.textContent = t.toFixed(3);
       }
     }
+  }
+
+  exportCurrentTuning() {
+    const payload = {
+      speciesId: this.currentAnimalType,
+      schemaVersion: this.schemaVersion,
+      tuning: { ...this.currentTuning },
+      timestamp: new Date().toISOString()
+    };
+    const safeId = (this.currentAnimalType || 'animal').toString().toLowerCase();
+    const filename = `${safeId}_tuning.json`;
+    downloadAsJSON(payload, filename);
+  }
+
+  exportPresetBundle() {
+    const name = (this.tuningPanel?.presetNameInput?.value || `${this.currentAnimalType || 'animal'}-preset`).trim();
+    const safeName = name ? name.replace(/\s+/g, '_') : 'preset';
+    const payload = {
+      name: name || 'preset',
+      speciesId: this.currentAnimalType,
+      schemaVersion: this.schemaVersion,
+      tuning: { ...this.currentTuning },
+      createdAt: new Date().toISOString()
+    };
+    const filename = `${safeName || 'preset'}_${this.currentAnimalType || 'animal'}_bundle.json`;
+    downloadAsJSON(payload, filename);
   }
 }
 

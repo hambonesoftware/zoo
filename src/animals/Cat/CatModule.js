@@ -3,6 +3,7 @@
 import { CatCreature } from './CatCreature.js';
 
 const DEFAULT_Y_OFFSET = 1.67; // padHeight (0.17) + cat base height (~1.5)
+const TUNING_SCHEMA_VERSION = '1.0.0';
 
 function applyTransform(creature, tuning) {
   if (!creature) return;
@@ -63,11 +64,44 @@ export const CatModule = {
     };
   },
 
+  getTuningSchemaVersion() {
+    return TUNING_SCHEMA_VERSION;
+  },
+
   getTuningSchema() {
+    const defaults = this.getDefaultTuning();
     return {
-      scale: { min: 0.4, max: 1.4, step: 0.01, label: 'Scale' },
-      rotationY: { min: -Math.PI, max: Math.PI, step: 0.01, label: 'Rotate Y' },
-      showSkeleton: { type: 'boolean', label: 'Show Skeleton' }
+      scale: {
+        min: 0.4,
+        max: 1.4,
+        step: 0.01,
+        label: 'Scale',
+        group: 'Global',
+        order: 0,
+        tier: 'A',
+        default: defaults.scale,
+        type: 'float'
+      },
+      rotationY: {
+        min: -Math.PI,
+        max: Math.PI,
+        step: 0.01,
+        label: 'Rotate Y',
+        group: 'Global',
+        order: 1,
+        tier: 'A',
+        default: defaults.rotationY,
+        type: 'float'
+      },
+      showSkeleton: {
+        type: 'boolean',
+        label: 'Show Skeleton',
+        group: 'Debug',
+        order: 0,
+        tier: 'A',
+        default: defaults.showSkeleton,
+        advanced: true
+      }
     };
   },
 
