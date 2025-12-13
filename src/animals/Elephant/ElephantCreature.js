@@ -3,18 +3,21 @@
 import * as THREE from 'three';
 import { ElephantDefinition } from './ElephantDefinition.js';
 import { ElephantGenerator } from './ElephantGenerator.js';
+import { RingsOverlay } from './debug/RingsOverlay.js';
 
 export class ElephantCreature extends THREE.Group {
   constructor(options = {}) {
     super();
 
     // 1. Build Bones
-    this.bones = this._buildBonesFromDefinition(ElephantDefinition.bones);
+    const definition = options.definition || ElephantDefinition;
+    this.bones = this._buildBonesFromDefinition(definition.bones);
     this.skeleton = new THREE.Skeleton(this.bones);
 
     // 2. Helper to set initial World Matrices
     const rootBone =
       this.bones.find((b) => b.name === 'spine_base') || this.bones[0];
+    this.rootBone = rootBone;
     this.add(rootBone);
     this.updateMatrixWorld(true);
 
@@ -47,18 +50,13 @@ export class ElephantCreature extends THREE.Group {
       (options.debug && typeof options.debug === 'object' && options.debug.showSkeleton === true);
     const showSkeleton = options.showSkeleton === true || debugShowSkeleton;
     if (showSkeleton) {
-      // Use the actual root bone so the helper traverses the full skeleton
-      // hierarchy, even though the skinned mesh is a sibling in the group.
-      this.skeletonHelper = new THREE.SkeletonHelper(rootBone);
-      this.skeletonHelper.skeleton = this.skeleton;
-      this.skeletonHelper.material.linewidth = 1;
-      this.skeletonHelper.material.color.set(0x00ff66); // Thin neon green lines
-      this.skeletonHelper.material.transparent = true;
-      this.skeletonHelper.material.opacity = 0.9;
-      this.skeletonHelper.material.blending = THREE.AdditiveBlending;
-      this.skeletonHelper.material.depthWrite = false;
-      this.skeletonHelper.material.toneMapped = false;
-      this.add(this.skeletonHelper);
+      this._ensureSkeletonHelper();
+      this.skeletonHelper.visible = true;
+    }
+    this.ringsOverlay = new RingsOverlay(this.skeleton);
+    this.add(this.ringsOverlay);
+    if (options.debugRings) {
+      this.ringsOverlay.updateConfig(options.debugRings);
     }
 
     // 5. Transform (creature-level transform, not baked into mesh)
@@ -99,8 +97,41 @@ export class ElephantCreature extends THREE.Group {
     if (this.behavior) {
       this.behavior.update(delta);
     }
-    if (this.skeletonHelper) {
+    this.updateMatrixWorld(true);
+    if (this.skeletonHelper && this.skeletonHelper.visible) {
       this.skeletonHelper.updateMatrixWorld(true);
     }
+    if (this.ringsOverlay) {
+      this.ringsOverlay.update();
+    }
+  }
+
+  setSkeletonVisible(visible) {
+    if (visible) {
+      this._ensureSkeletonHelper();
+      this.skeletonHelper.visible = true;
+      this.skeletonHelper.updateMatrixWorld(true);
+      return;
+    }
+    if (this.skeletonHelper) {
+      this.skeletonHelper.visible = false;
+    }
+  }
+
+  _ensureSkeletonHelper() {
+    if (this.skeletonHelper) return;
+    if (!this.rootBone) return;
+    // Use the actual root bone so the helper traverses the full skeleton
+    // hierarchy, even though the skinned mesh is a sibling in the group.
+    this.skeletonHelper = new THREE.SkeletonHelper(this.rootBone);
+    this.skeletonHelper.skeleton = this.skeleton;
+    this.skeletonHelper.material.linewidth = 1;
+    this.skeletonHelper.material.color.set(0x00ff66); // Thin neon green lines
+    this.skeletonHelper.material.transparent = true;
+    this.skeletonHelper.material.opacity = 0.9;
+    this.skeletonHelper.material.blending = THREE.AdditiveBlending;
+    this.skeletonHelper.material.depthWrite = false;
+    this.skeletonHelper.material.toneMapped = false;
+    this.add(this.skeletonHelper);
   }
 }
