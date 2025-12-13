@@ -3,7 +3,29 @@
 import * as THREE from 'three';
 import { mergeGeometries } from '../../libs/BufferGeometryUtils.js';
 
-function buildLimbSegment(start, end, radiusStart, radiusEnd, segments = 8, rings = 5, boneStart = 0, boneEnd = 0, uvOffset = 0, uvSpan = 1) {
+function applyBias(t, bias) {
+  if (!bias) return t;
+  const exponent = 1 + Math.abs(bias) * 4;
+  return bias > 0 ? Math.pow(t, exponent) : 1 - Math.pow(1 - t, exponent);
+}
+
+function buildLimbSegment(
+  start,
+  end,
+  radiusStart,
+  radiusEnd,
+  segments = 8,
+  rings = 5,
+  boneStart = 0,
+  boneEnd = 0,
+  uvOffset = 0,
+  uvSpan = 1,
+  ringBias = 0,
+  startT = 0,
+  endT = 1,
+  tStops = null,
+  distributionFn = null
+) {
   const geometry = new THREE.BufferGeometry();
   const vertices = [];
   const indices = [];
@@ -24,8 +46,19 @@ function buildLimbSegment(start, end, radiusStart, radiusEnd, segments = 8, ring
   const side = new THREE.Vector3().crossVectors(direction, up).normalize();
   const binormal = new THREE.Vector3().crossVectors(direction, side).normalize();
 
-  for (let i = 0; i < rings; i++) {
-    const t = i / (rings - 1);
+  const ringCount = Math.max(1, tStops?.length || rings || 0);
+  const safeDenom = Math.max(1, ringCount - 1);
+  for (let i = 0; i < ringCount; i++) {
+    const normalized =
+      tStops && tStops.length
+        ? THREE.MathUtils.clamp(tStops[i], 0, 1)
+        : safeDenom === 0
+        ? 0
+        : i / safeDenom;
+    const distributed = distributionFn
+      ? distributionFn(normalized)
+      : applyBias(normalized, ringBias);
+    const t = THREE.MathUtils.lerp(startT, endT, THREE.MathUtils.clamp(distributed, 0, 1));
     const center = new THREE.Vector3().lerpVectors(start, end, t);
     const radius = THREE.MathUtils.lerp(radiusStart, radiusEnd, t);
     const angleStep = (2 * Math.PI) / segments;
@@ -48,7 +81,7 @@ function buildLimbSegment(start, end, radiusStart, radiusEnd, segments = 8, ring
     }
   }
 
-  for (let i = 0; i < rings - 1; i++) {
+  for (let i = 0; i < ringCount - 1; i++) {
     for (let j = 0; j < segments; j++) {
       const next = (j + 1) % segments;
       const a = i * segments + j;
@@ -77,6 +110,11 @@ export function generateLimbGeometry(skeleton, options = {}) {
   const radii = options.radii || [];
   const segments = options.sides || 8;
   const rings = options.rings || 5;
+  const ringBias = options.ringBias || 0;
+  const startT = options.startT ?? 0;
+  const endT = options.endT ?? 1;
+  const ringTStops = Array.isArray(options.tStops) ? options.tStops : null;
+  const distributionFn = typeof options.distributionFn === 'function' ? options.distributionFn : null;
 
   const boneIndexMap = {};
   skeleton.bones.forEach((bone, idx) => {
@@ -111,7 +149,12 @@ export function generateLimbGeometry(skeleton, options = {}) {
         boneStart,
         boneEnd,
         i * segmentSpan,
-        segmentSpan
+        segmentSpan,
+        ringBias,
+        startT,
+        endT,
+        ringTStops,
+        distributionFn
       )
     );
   }

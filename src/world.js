@@ -76,6 +76,8 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
   let activeAnimalId = null;
   let activeModule = null;
   let currentTuning = null;
+  let rebuildTimer = null;
+  const REBUILD_DEBOUNCE_MS = 180;
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -156,15 +158,26 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
   function applyTuning(tuningPatch = {}) {
     if (!activeModule || !activeAnimal) return;
     currentTuning = { ...currentTuning, ...tuningPatch };
+    const keys = Object.keys(tuningPatch);
+    const wantsRebuild =
+      typeof activeModule.shouldRebuildOnChange === 'function' &&
+      keys.some((key) => activeModule.shouldRebuildOnChange(key));
+
+    if (wantsRebuild && typeof activeModule.rebuild === 'function') {
+      if (rebuildTimer) {
+        clearTimeout(rebuildTimer);
+      }
+      rebuildTimer = setTimeout(() => {
+        const rebuilt = activeModule.rebuild({ renderer, scene, tuning: currentTuning, existing: activeAnimal });
+        if (rebuilt) {
+          activeAnimal = rebuilt;
+          pen.mountAnimal(rebuilt);
+        }
+      }, REBUILD_DEBOUNCE_MS);
+    }
 
     if (typeof activeModule.applyTuning === 'function') {
       activeModule.applyTuning(activeAnimal, currentTuning);
-    } else if (typeof activeModule.rebuild === 'function') {
-      const rebuilt = activeModule.rebuild({ renderer, scene, tuning: currentTuning });
-      if (rebuilt) {
-        activeAnimal = rebuilt;
-        pen.mountAnimal(rebuilt);
-      }
     }
   }
 

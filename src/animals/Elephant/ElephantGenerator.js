@@ -79,6 +79,40 @@ export class ElephantGenerator {
       options.lowPolyLegSides >= 3
         ? options.lowPolyLegSides
         : 9;
+    const limbMeshOptions = options.limbMesh || {};
+    const limbRings = Math.max(
+      3,
+      Math.round(
+        typeof limbMeshOptions.ringsPerSegment === 'number'
+          ? limbMeshOptions.ringsPerSegment
+          : 5
+      )
+    );
+    const limbRingBias =
+      typeof limbMeshOptions.ringBias === 'number' ? limbMeshOptions.ringBias : 0;
+    const limbRingStartT =
+      typeof limbMeshOptions.startT === 'number'
+        ? THREE.MathUtils.clamp(limbMeshOptions.startT, 0, 1)
+        : 0;
+    const limbRingEndT = Math.max(
+      limbRingStartT,
+      typeof limbMeshOptions.endT === 'number'
+        ? THREE.MathUtils.clamp(limbMeshOptions.endT, 0, 1)
+        : 1
+    );
+    const limbRingTStops =
+      Array.isArray(limbMeshOptions.tStops) && limbMeshOptions.tStops.length > 0
+        ? limbMeshOptions.tStops.map((t) => THREE.MathUtils.clamp(t, 0, 1))
+        : null;
+    const limbRingDistribution =
+      typeof limbMeshOptions.distributionFn === 'function'
+        ? limbMeshOptions.distributionFn
+        : null;
+    const limbSidesOverride =
+      typeof limbMeshOptions.sides === 'number' && limbMeshOptions.sides >= 3
+        ? limbMeshOptions.sides
+        : null;
+    const limbOverrides = limbMeshOptions.limbs || {};
 
     // ------------------------------------------------------------
     // Variant processing
@@ -102,7 +136,11 @@ export class ElephantGenerator {
     // stylised species while still exhibiting subtle differences.
     const legScale = 1.0 + (variantFactor - 0.5) * 0.2; // ±10%
     const tuskScale = 1.0 + (variantFactor - 0.5) * 0.3; // ±15%
-    const headScale = 1.0 + (0.5 - variantFactor) * 0.15; // ±7.5%
+    const headScaleMultiplier =
+      typeof options.headScale === 'number' && options.headScale > 0
+        ? options.headScale
+        : 1;
+    const headScale = (1.0 + (0.5 - variantFactor) * 0.15) * headScaleMultiplier; // ±7.5%
     const headRadius = 0.95 * headScale;
     const torsoRadiusProfile = makeElephantTorsoRadiusProfile(headScale);
 
@@ -333,8 +371,25 @@ export class ElephantGenerator {
 
 
     // === 8. LEGS (Pillars) ===
+    const limbSides = limbSidesOverride ?? (lowPoly ? legSidesLowPoly : 20);
     const legConfig = {
-      sides: lowPoly ? legSidesLowPoly : 20
+      sides: limbSides,
+      rings: limbRings,
+      ringBias: limbRingBias,
+      startT: limbRingStartT,
+      endT: limbRingEndT,
+      tStops: limbRingTStops,
+      distributionFn: limbRingDistribution
+    };
+
+    const buildLimbRadii = (limbKey, defaults) => {
+      const override = limbOverrides[limbKey] || {};
+      const upper = override.upperRadius ?? defaults.upperRadius;
+      const knee = override.kneeRadius ?? defaults.kneeRadius;
+      const ankle = override.ankleRadius ?? defaults.ankleRadius;
+      const foot = override.footRadius ?? defaults.footRadius;
+      const flare = override.footFlare ?? defaults.footFlare ?? foot;
+      return [upper, knee, ankle, foot, flare].map((v) => v * legScale);
     };
 
     // To emphasise the toe/hoof band near the bottom of each leg we
@@ -349,13 +404,13 @@ export class ElephantGenerator {
         'front_left_lower',
         'front_left_foot'
       ],
-      radii: [
-        0.5 * legScale,
-        0.45 * legScale,
-        0.4 * legScale,
-        0.38 * legScale,
-        0.43 * legScale
-      ],
+      radii: buildLimbRadii('frontLeft', {
+        upperRadius: 0.5,
+        kneeRadius: 0.45,
+        ankleRadius: 0.4,
+        footRadius: 0.38,
+        footFlare: 0.43
+      }),
       ...legConfig
     });
 
@@ -366,13 +421,13 @@ export class ElephantGenerator {
         'front_right_lower',
         'front_right_foot'
       ],
-      radii: [
-        0.5 * legScale,
-        0.45 * legScale,
-        0.4 * legScale,
-        0.38 * legScale,
-        0.43 * legScale
-      ],
+      radii: buildLimbRadii('frontRight', {
+        upperRadius: 0.5,
+        kneeRadius: 0.45,
+        ankleRadius: 0.4,
+        footRadius: 0.38,
+        footFlare: 0.43
+      }),
       ...legConfig
     });
 
@@ -383,13 +438,13 @@ export class ElephantGenerator {
         'back_left_lower',
         'back_left_foot'
       ],
-      radii: [
-        0.55 * legScale,
-        0.5 * legScale,
-        0.42 * legScale,
-        0.38 * legScale,
-        0.44 * legScale
-      ],
+      radii: buildLimbRadii('backLeft', {
+        upperRadius: 0.55,
+        kneeRadius: 0.5,
+        ankleRadius: 0.42,
+        footRadius: 0.38,
+        footFlare: 0.44
+      }),
       ...legConfig
     });
 
@@ -400,13 +455,13 @@ export class ElephantGenerator {
         'back_right_lower',
         'back_right_foot'
       ],
-      radii: [
-        0.55 * legScale,
-        0.5 * legScale,
-        0.42 * legScale,
-        0.38 * legScale,
-        0.44 * legScale
-      ],
+      radii: buildLimbRadii('backRight', {
+        upperRadius: 0.55,
+        kneeRadius: 0.5,
+        ankleRadius: 0.42,
+        footRadius: 0.38,
+        footFlare: 0.44
+      }),
       ...legConfig
     });
 
