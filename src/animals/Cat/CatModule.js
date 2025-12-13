@@ -1,6 +1,7 @@
 // src/animals/Cat/CatModule.js
 
 import { CatCreature } from './CatCreature.js';
+import { CatDefinition } from './CatDefinition.js';
 
 const DEFAULT_Y_OFFSET = 1.67; // padHeight (0.17) + cat base height (~1.5)
 const TUNING_SCHEMA_VERSION = '1.0.0';
