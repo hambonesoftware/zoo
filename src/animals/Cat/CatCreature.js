@@ -8,8 +8,10 @@ export class CatCreature extends THREE.Group {
   constructor(options = {}) {
     super();
 
+    const definition = options.definition || CatDefinition;
+
     // 1. Build Bones
-    this.bones = this._buildBonesFromDefinition(CatDefinition.bones);
+    this.bones = this._buildBonesFromDefinition(definition.bones);
     this.skeleton = new THREE.Skeleton(this.bones);
 
     // 2. Helper to set initial World Matrices
