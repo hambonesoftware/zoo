@@ -10,11 +10,17 @@ const STORAGE_KEYS = {
 const DEFAULT_GROUP_ORDER = {
   Global: 0,
   Skeleton: 1,
-  'Limb Mesh': 2,
-  Materials: 3,
-  Advanced: 4,
-  Debug: 5
+  Torso: 2,
+  Trunk: 3,
+  Tusks: 4,
+  Legs: 5,
+  Materials: 6,
+  Debug: 7,
+  'Debug Rings': 8,
+  Advanced: 9
 };
+
+const DEFAULT_OPEN_GROUPS = new Set(['Global', 'Skeleton', 'Torso', 'Trunk', 'Tusks']);
 
 export class TuningPanel {
   constructor({ onTuningChange, onReset, onPresetLoad, onFrame, onCameraReset, onUndo, onRedo } = {}) {
@@ -322,15 +328,20 @@ export class TuningPanel {
 
       const content = document.createElement('div');
       content.className = 'zoo-tuning-group-body';
-      const open = this.readGroupOpen(groupName);
+      let storedOpen = this.readGroupOpen(groupName);
+      const forceOpen = Boolean(this.searchQuery);
+      const open = forceOpen ? true : storedOpen;
       content.hidden = !open;
       header.setAttribute('aria-expanded', open ? 'true' : 'false');
+      header.classList.toggle('closed', !open);
 
       header.addEventListener('click', () => {
-        const nextOpen = content.hidden;
+        storedOpen = !storedOpen;
+        this.storeGroupOpen(groupName, storedOpen);
+        const nextOpen = forceOpen ? true : storedOpen;
         content.hidden = !nextOpen;
         header.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
-        this.storeGroupOpen(groupName, nextOpen);
+        header.classList.toggle('closed', !nextOpen);
       });
 
       for (const entry of group.entries) {
@@ -703,11 +714,7 @@ export class TuningPanel {
     if (typeof localStorage !== 'undefined' && localStorage.getItem(key) !== null) {
       return localStorage.getItem(key) === 'true';
     }
-    return (
-      group === 'Global' ||
-      group.startsWith('Skeleton') ||
-      group.startsWith('Limb Mesh')
-    );
+    return DEFAULT_OPEN_GROUPS.has(group);
   }
 
   storeGroupOpen(group, open) {

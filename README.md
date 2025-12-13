@@ -49,6 +49,12 @@ During development you should see:
 - The currently selected animal (default: cat) in its pen
 - A debug panel with basic information about pens, bounds, and behavior
 
+## Studio controls
+
+- The tuning panel is collapsible and grouped by accordion headers so you can quickly hide whole sections (Global, Skeleton, Torso, Trunk, Tusks, Legs, Materials, Debug).
+- Frame the current animal with **F** and reset the studio camera with **R**; both shortcuts mirror the header buttons.
+- Elephant-specific tuning now exposes tusk length scaling, trunk base offsets (XYZ), and torso ring density/radius/bulge controls; defaults match the original look and Tier B changes rebuild after the debounce.
+
 ## Production build
 
 To create a production build:

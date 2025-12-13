@@ -61,6 +61,7 @@ export function generateTorsoGeometry(skeleton, options = {}) {
   const rumpBulgeDepth =
     typeof options.rumpBulgeDepth === 'number' ? options.rumpBulgeDepth : null;
   const extendRumpToRearLegs = options.extendRumpToRearLegs || false;
+  const ringsPerSegment = Math.max(0, Math.floor(options.ringsPerSegment ?? 0));
 
   const boneIndexMap = {};
   skeleton.bones.forEach((bone, idx) => {
@@ -189,9 +190,53 @@ export function generateTorsoGeometry(skeleton, options = {}) {
     }
   }
 
+  const densify = (spineEntries, radiiEntries, extraRings) => {
+    if (extraRings <= 0 || spineEntries.length < 2) return { spineEntries, radiiEntries };
+
+    const densifiedSpine = [];
+    const densifiedRadii = [];
+
+    for (let i = 0; i < spineEntries.length - 1; i += 1) {
+      const a = spineEntries[i];
+      const b = spineEntries[i + 1];
+      const aRadius = radiiEntries[i];
+      const bRadius = radiiEntries[i + 1];
+
+      densifiedSpine.push(a);
+      densifiedRadii.push(aRadius);
+
+      for (let j = 1; j <= extraRings; j += 1) {
+        const t = j / (extraRings + 1);
+        const point = new THREE.Vector3(a.x, a.y, a.z).lerp(
+          new THREE.Vector3(b.x, b.y, b.z),
+          t
+        );
+
+        const radius =
+          typeof aRadius === 'number' || typeof bRadius === 'number'
+            ? THREE.MathUtils.lerp(
+                typeof aRadius === 'number' ? aRadius : bRadius ?? 0,
+                typeof bRadius === 'number' ? bRadius : aRadius ?? 0,
+                t
+              )
+            : null;
+
+        densifiedSpine.push({ x: point.x, y: point.y, z: point.z, boneIndex: a.boneIndex });
+        densifiedRadii.push(radius);
+      }
+    }
+
+    densifiedSpine.push(spineEntries[spineEntries.length - 1]);
+    densifiedRadii.push(radiiEntries[radiiEntries.length - 1]);
+
+    return { spineEntries: densifiedSpine, radiiEntries: densifiedRadii };
+  };
+
+  const { spineEntries, radiiEntries } = densify(spineForBuild, radiiForBuild, ringsPerSegment);
+
   const geometry = buildTorsoFromSpine(
-    spineForBuild,
-    radiiForBuild,
+    spineEntries,
+    radiiEntries,
     sides,
     radiusProfile,
     capStart,

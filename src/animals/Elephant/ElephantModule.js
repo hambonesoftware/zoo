@@ -5,7 +5,7 @@ import { ElephantCreature } from './ElephantCreature.js';
 import { ElephantDefinition } from './ElephantDefinition.js';
 
 const DEFAULT_Y_OFFSET = 1.37; // padHeight (0.17) + elephant base height (~1.2)
-const TUNING_SCHEMA_VERSION = '1.0.0';
+const TUNING_SCHEMA_VERSION = '1.1.0';
 
 const LIMB_KEYS = ['frontLeft', 'frontRight', 'backLeft', 'backRight'];
 
@@ -38,6 +38,18 @@ function applyScaleToBone(bones, name, scale) {
   const bone = bones.find((b) => b.name === name);
   if (!bone || !Array.isArray(bone.position)) return;
   bone.position = bone.position.map((v) => v * scale);
+}
+
+function applyOffsetToBone(bones, name, offset = {}) {
+  if (!bones || !name) return;
+  const bone = bones.find((b) => b.name === name);
+  if (!bone || !Array.isArray(bone.position)) return;
+  const { x = 0, y = 0, z = 0 } = offset;
+  bone.position = [
+    bone.position[0] + x,
+    bone.position[1] + y,
+    bone.position[2] + z
+  ];
 }
 
 function buildDefinitionForSkeleton(tuning) {
@@ -87,6 +99,21 @@ function buildDefinitionForSkeleton(tuning) {
   applyScaleToBone(def.bones, 'trunk_mid1', trunkScale);
   applyScaleToBone(def.bones, 'trunk_mid2', trunkScale);
   applyScaleToBone(def.bones, 'trunk_tip', trunkScale);
+
+  const trunkOffset = {
+    x: getNumber(tuning['skeleton.trunkBaseOffsetX'], 0),
+    y: getNumber(tuning['skeleton.trunkBaseOffsetY'], 0),
+    z: getNumber(tuning['skeleton.trunkBaseOffsetZ'], 0)
+  };
+
+  if (trunkOffset.x || trunkOffset.y || trunkOffset.z) {
+    applyOffsetToBone(def.bones, 'trunk_anchor', trunkOffset);
+    applyOffsetToBone(def.bones, 'trunk_root', trunkOffset);
+  }
+
+  const tuskLenScale = getNumber(tuning['tusk.lengthScale'], 1);
+  applyScaleToBone(def.bones, 'tusk_left_tip', tuskLenScale);
+  applyScaleToBone(def.bones, 'tusk_right_tip', tuskLenScale);
 
   return def;
 }
@@ -151,6 +178,15 @@ function buildLimbMeshConfig(tuning) {
   };
 }
 
+function buildTorsoConfig(tuning) {
+  return {
+    ringsPerSegment: Math.max(0, Math.round(getNumber(tuning['torso.ringsPerSegment'], 0))),
+    sides: getNumber(tuning['torso.sides'], 28),
+    radiusScale: getNumber(tuning['torso.radiusScale'], 1),
+    bulge: getNumber(tuning['torso.bulge'], 0.4)
+  };
+}
+
 function buildRingsConfig(tuning) {
   const limbs = {};
   for (const limb of LIMB_KEYS) {
@@ -208,6 +244,7 @@ export const ElephantModule = {
     const scale = getNumber(merged['global.scale'], merged.scale);
     const showSkeleton = merged['debug.showSkeleton'] ?? merged.showSkeleton;
     const limbMesh = buildLimbMeshConfig(merged);
+    const torso = buildTorsoConfig(merged);
     const definition = buildDefinitionForSkeleton(merged);
 
     const creature = new ElephantCreature({
@@ -219,6 +256,7 @@ export const ElephantModule = {
       variantSeed: merged.variantSeed,
       debugRings: ringsOverlay,
       limbMesh,
+      torso,
       headScale: getNumber(merged['skeleton.headScale'], 1),
       definition
     });
@@ -255,6 +293,14 @@ export const ElephantModule = {
       'skeleton.neckLenScale': 1,
       'skeleton.headScale': 1,
       'skeleton.trunkLenScale': 1,
+      'skeleton.trunkBaseOffsetX': 0,
+      'skeleton.trunkBaseOffsetY': 0,
+      'skeleton.trunkBaseOffsetZ': 0,
+      'tusk.lengthScale': 1,
+      'torso.ringsPerSegment': 0,
+      'torso.sides': 28,
+      'torso.radiusScale': 1,
+      'torso.bulge': 0.4,
       'limbMesh.ringsPerSegment': 5,
       'limbMesh.sides': 9,
       'limbMesh.ringBias': 0,
@@ -317,6 +363,19 @@ export const ElephantModule = {
       backRight: 'Back Right'
     };
 
+    const GROUP_ORDER = {
+      Global: 0,
+      Skeleton: 1,
+      Torso: 2,
+      Trunk: 3,
+      Tusks: 4,
+      Legs: 5,
+      Materials: 6,
+      Debug: 7,
+      'Debug Rings': 8,
+      Advanced: 9
+    };
+
     const make = (key, { label, group = 'Global', order = 0, tier = 'A', type = 'float', groupOrder, ...rest }) => ({
       label,
       group,
@@ -351,7 +410,7 @@ export const ElephantModule = {
         label: 'Low Poly',
         type: 'boolean',
         group: 'Materials',
-        groupOrder: 4,
+        groupOrder: GROUP_ORDER.Materials,
         order: 0,
         tier: 'B'
       }),
@@ -362,7 +421,7 @@ export const ElephantModule = {
         step: 0.01,
         type: 'float',
         group: 'Materials',
-        groupOrder: 4,
+        groupOrder: GROUP_ORDER.Materials,
         order: 1,
         tier: 'B',
         format: 2
@@ -374,7 +433,7 @@ export const ElephantModule = {
         max: 9999,
         step: 1,
         group: 'Advanced',
-        groupOrder: 5,
+        groupOrder: GROUP_ORDER.Advanced,
         order: 1,
         tier: 'B',
         advanced: true
@@ -383,7 +442,7 @@ export const ElephantModule = {
         label: 'Show Skeleton',
         type: 'boolean',
         group: 'Debug',
-        groupOrder: 6,
+        groupOrder: GROUP_ORDER.Debug,
         order: 0,
         tier: 'A',
         advanced: true
@@ -392,7 +451,7 @@ export const ElephantModule = {
         label: 'Rings: Enabled',
         type: 'boolean',
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 0,
         tier: 'A',
         advanced: true
@@ -403,7 +462,7 @@ export const ElephantModule = {
         max: 2,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 1,
         tier: 'A',
         advanced: true
@@ -414,7 +473,7 @@ export const ElephantModule = {
         max: 0.3,
         step: 0.005,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 2,
         tier: 'A',
         advanced: true
@@ -425,7 +484,7 @@ export const ElephantModule = {
         max: 0.5,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 3,
         tier: 'A',
         advanced: true
@@ -436,7 +495,7 @@ export const ElephantModule = {
         max: 0.5,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 4,
         tier: 'A',
         advanced: true
@@ -447,7 +506,7 @@ export const ElephantModule = {
         max: 0.5,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 5,
         tier: 'A',
         advanced: true
@@ -458,78 +517,18 @@ export const ElephantModule = {
         max: 1,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 6,
         tier: 'A',
         advanced: true
-      }),
-      'skeleton.front.upperLenScale': make('skeleton.front.upperLenScale', {
-        label: 'Front Upper Len ×',
-        min: 0.5,
-        max: 1.6,
-        step: 0.01,
-        group: 'Skeleton / Front Legs',
-        groupOrder: 2,
-        order: 0,
-        tier: 'B'
-      }),
-      'skeleton.front.lowerLenScale': make('skeleton.front.lowerLenScale', {
-        label: 'Front Lower Len ×',
-        min: 0.5,
-        max: 1.6,
-        step: 0.01,
-        group: 'Skeleton / Front Legs',
-        groupOrder: 2,
-        order: 1,
-        tier: 'B'
-      }),
-      'skeleton.front.footLenScale': make('skeleton.front.footLenScale', {
-        label: 'Front Foot Len ×',
-        min: 0.5,
-        max: 1.6,
-        step: 0.01,
-        group: 'Skeleton / Front Legs',
-        groupOrder: 2,
-        order: 2,
-        tier: 'B'
-      }),
-      'skeleton.back.upperLenScale': make('skeleton.back.upperLenScale', {
-        label: 'Back Upper Len ×',
-        min: 0.5,
-        max: 1.6,
-        step: 0.01,
-        group: 'Skeleton / Back Legs',
-        groupOrder: 3,
-        order: 0,
-        tier: 'B'
-      }),
-      'skeleton.back.lowerLenScale': make('skeleton.back.lowerLenScale', {
-        label: 'Back Lower Len ×',
-        min: 0.5,
-        max: 1.6,
-        step: 0.01,
-        group: 'Skeleton / Back Legs',
-        groupOrder: 3,
-        order: 1,
-        tier: 'B'
-      }),
-      'skeleton.back.footLenScale': make('skeleton.back.footLenScale', {
-        label: 'Back Foot Len ×',
-        min: 0.5,
-        max: 1.6,
-        step: 0.01,
-        group: 'Skeleton / Back Legs',
-        groupOrder: 3,
-        order: 2,
-        tier: 'B'
       }),
       'skeleton.spineLenScale': make('skeleton.spineLenScale', {
         label: 'Spine Len ×',
         min: 0.5,
         max: 1.5,
         step: 0.01,
-        group: 'Skeleton / Body',
-        groupOrder: 1,
+        group: 'Skeleton',
+        groupOrder: GROUP_ORDER.Skeleton,
         order: 0,
         tier: 'B'
       }),
@@ -538,8 +537,8 @@ export const ElephantModule = {
         min: 0.5,
         max: 1.5,
         step: 0.01,
-        group: 'Skeleton / Body',
-        groupOrder: 1,
+        group: 'Skeleton',
+        groupOrder: GROUP_ORDER.Skeleton,
         order: 1,
         tier: 'B'
       }),
@@ -548,9 +547,69 @@ export const ElephantModule = {
         min: 0.6,
         max: 1.6,
         step: 0.01,
-        group: 'Skeleton / Body',
-        groupOrder: 1,
+        group: 'Skeleton',
+        groupOrder: GROUP_ORDER.Skeleton,
         order: 2,
+        tier: 'B'
+      }),
+      'skeleton.front.upperLenScale': make('skeleton.front.upperLenScale', {
+        label: 'Front Upper Len ×',
+        min: 0.5,
+        max: 1.6,
+        step: 0.01,
+        group: 'Skeleton',
+        groupOrder: GROUP_ORDER.Skeleton,
+        order: 3,
+        tier: 'B'
+      }),
+      'skeleton.front.lowerLenScale': make('skeleton.front.lowerLenScale', {
+        label: 'Front Lower Len ×',
+        min: 0.5,
+        max: 1.6,
+        step: 0.01,
+        group: 'Skeleton',
+        groupOrder: GROUP_ORDER.Skeleton,
+        order: 4,
+        tier: 'B'
+      }),
+      'skeleton.front.footLenScale': make('skeleton.front.footLenScale', {
+        label: 'Front Foot Len ×',
+        min: 0.5,
+        max: 1.6,
+        step: 0.01,
+        group: 'Skeleton',
+        groupOrder: GROUP_ORDER.Skeleton,
+        order: 5,
+        tier: 'B'
+      }),
+      'skeleton.back.upperLenScale': make('skeleton.back.upperLenScale', {
+        label: 'Back Upper Len ×',
+        min: 0.5,
+        max: 1.6,
+        step: 0.01,
+        group: 'Skeleton',
+        groupOrder: GROUP_ORDER.Skeleton,
+        order: 6,
+        tier: 'B'
+      }),
+      'skeleton.back.lowerLenScale': make('skeleton.back.lowerLenScale', {
+        label: 'Back Lower Len ×',
+        min: 0.5,
+        max: 1.6,
+        step: 0.01,
+        group: 'Skeleton',
+        groupOrder: GROUP_ORDER.Skeleton,
+        order: 7,
+        tier: 'B'
+      }),
+      'skeleton.back.footLenScale': make('skeleton.back.footLenScale', {
+        label: 'Back Foot Len ×',
+        min: 0.5,
+        max: 1.6,
+        step: 0.01,
+        group: 'Skeleton',
+        groupOrder: GROUP_ORDER.Skeleton,
+        order: 8,
         tier: 'B'
       }),
       'skeleton.trunkLenScale': make('skeleton.trunkLenScale', {
@@ -558,9 +617,91 @@ export const ElephantModule = {
         min: 0.5,
         max: 1.6,
         step: 0.01,
-        group: 'Skeleton / Body',
-        groupOrder: 1,
+        group: 'Trunk',
+        groupOrder: GROUP_ORDER.Trunk,
+        order: 0,
+        tier: 'B'
+      }),
+      'skeleton.trunkBaseOffsetX': make('skeleton.trunkBaseOffsetX', {
+        label: 'Trunk Offset X',
+        min: -0.5,
+        max: 0.5,
+        step: 0.01,
+        group: 'Trunk',
+        groupOrder: GROUP_ORDER.Trunk,
+        order: 1,
+        tier: 'B'
+      }),
+      'skeleton.trunkBaseOffsetY': make('skeleton.trunkBaseOffsetY', {
+        label: 'Trunk Offset Y',
+        min: -0.5,
+        max: 0.5,
+        step: 0.01,
+        group: 'Trunk',
+        groupOrder: GROUP_ORDER.Trunk,
+        order: 2,
+        tier: 'B'
+      }),
+      'skeleton.trunkBaseOffsetZ': make('skeleton.trunkBaseOffsetZ', {
+        label: 'Trunk Offset Z',
+        min: -0.6,
+        max: 0.6,
+        step: 0.01,
+        group: 'Trunk',
+        groupOrder: GROUP_ORDER.Trunk,
         order: 3,
+        tier: 'B'
+      }),
+      'torso.ringsPerSegment': make('torso.ringsPerSegment', {
+        label: 'Torso Rings/Segment',
+        type: 'int',
+        min: 0,
+        max: 6,
+        step: 1,
+        group: 'Torso',
+        groupOrder: GROUP_ORDER.Torso,
+        order: 0,
+        tier: 'B'
+      }),
+      'torso.sides': make('torso.sides', {
+        label: 'Torso Sides',
+        type: 'int',
+        min: 6,
+        max: 48,
+        step: 1,
+        group: 'Torso',
+        groupOrder: GROUP_ORDER.Torso,
+        order: 1,
+        tier: 'B'
+      }),
+      'torso.radiusScale': make('torso.radiusScale', {
+        label: 'Torso Radius ×',
+        min: 0.6,
+        max: 1.6,
+        step: 0.01,
+        group: 'Torso',
+        groupOrder: GROUP_ORDER.Torso,
+        order: 2,
+        tier: 'B'
+      }),
+      'torso.bulge': make('torso.bulge', {
+        label: 'Torso Bulge Depth',
+        min: 0,
+        max: 1,
+        step: 0.01,
+        group: 'Torso',
+        groupOrder: GROUP_ORDER.Torso,
+        order: 3,
+        tier: 'B'
+      }),
+      'tusk.lengthScale': make('tusk.lengthScale', {
+        label: 'Tusk Length ×',
+        min: 0.5,
+        max: 1.6,
+        step: 0.01,
+        group: 'Tusks',
+        groupOrder: GROUP_ORDER.Tusks,
+        order: 0,
         tier: 'B'
       }),
       'limbMesh.ringsPerSegment': make('limbMesh.ringsPerSegment', {
@@ -569,8 +710,8 @@ export const ElephantModule = {
         min: 3,
         max: 32,
         step: 1,
-        group: 'Limb Mesh',
-        groupOrder: 4,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
         order: 0,
         tier: 'B'
       }),
@@ -580,8 +721,8 @@ export const ElephantModule = {
         min: 6,
         max: 40,
         step: 1,
-        group: 'Limb Mesh',
-        groupOrder: 4,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
         order: 1,
         tier: 'B'
       }),
@@ -590,8 +731,8 @@ export const ElephantModule = {
         min: -1,
         max: 1,
         step: 0.05,
-        group: 'Limb Mesh',
-        groupOrder: 4,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
         order: 2,
         tier: 'B'
       }),
@@ -600,8 +741,8 @@ export const ElephantModule = {
         min: 0,
         max: 1,
         step: 0.01,
-        group: 'Limb Mesh',
-        groupOrder: 4,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
         order: 3,
         tier: 'B'
       }),
@@ -610,8 +751,8 @@ export const ElephantModule = {
         min: 0,
         max: 1,
         step: 0.01,
-        group: 'Limb Mesh',
-        groupOrder: 4,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
         order: 4,
         tier: 'B'
       })
@@ -625,7 +766,7 @@ export const ElephantModule = {
         max: 2,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 10,
         tier: 'A',
         advanced: true
@@ -636,7 +777,7 @@ export const ElephantModule = {
         max: 24,
         step: 1,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 11,
         tier: 'A',
         advanced: true
@@ -647,7 +788,7 @@ export const ElephantModule = {
         max: 1,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 12,
         tier: 'A',
         advanced: true
@@ -658,7 +799,7 @@ export const ElephantModule = {
         max: 1,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 13,
         tier: 'A',
         advanced: true
@@ -669,7 +810,7 @@ export const ElephantModule = {
         max: 1,
         step: 0.05,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 14,
         tier: 'A',
         advanced: true
@@ -680,7 +821,7 @@ export const ElephantModule = {
         max: 0.5,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 15,
         tier: 'A',
         advanced: true
@@ -691,7 +832,7 @@ export const ElephantModule = {
         max: 0.5,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 16,
         tier: 'A',
         advanced: true
@@ -702,7 +843,7 @@ export const ElephantModule = {
         max: 0.5,
         step: 0.01,
         group: 'Debug Rings',
-        groupOrder: 7,
+        groupOrder: GROUP_ORDER['Debug Rings'],
         order: 17,
         tier: 'A',
         advanced: true
@@ -713,9 +854,9 @@ export const ElephantModule = {
         min: 0.2,
         max: 1,
         step: 0.01,
-        group: `Limb Mesh / ${label}`,
-        groupOrder: 5,
-        order: 0,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
+        order: 10,
         tier: 'B'
       });
       schema[`limbMesh.${limb}.kneeRadius`] = make(`limbMesh.${limb}.kneeRadius`, {
@@ -723,9 +864,9 @@ export const ElephantModule = {
         min: 0.2,
         max: 1,
         step: 0.01,
-        group: `Limb Mesh / ${label}`,
-        groupOrder: 5,
-        order: 1,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
+        order: 11,
         tier: 'B'
       });
       schema[`limbMesh.${limb}.ankleRadius`] = make(`limbMesh.${limb}.ankleRadius`, {
@@ -733,9 +874,9 @@ export const ElephantModule = {
         min: 0.2,
         max: 1,
         step: 0.01,
-        group: `Limb Mesh / ${label}`,
-        groupOrder: 5,
-        order: 2,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
+        order: 12,
         tier: 'B'
       });
       schema[`limbMesh.${limb}.footRadius`] = make(`limbMesh.${limb}.footRadius`, {
@@ -743,9 +884,9 @@ export const ElephantModule = {
         min: 0.2,
         max: 1,
         step: 0.01,
-        group: `Limb Mesh / ${label}`,
-        groupOrder: 5,
-        order: 3,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
+        order: 13,
         tier: 'B'
       });
       schema[`limbMesh.${limb}.footFlare`] = make(`limbMesh.${limb}.footFlare`, {
@@ -753,9 +894,9 @@ export const ElephantModule = {
         min: 0.2,
         max: 1.4,
         step: 0.01,
-        group: `Limb Mesh / ${label}`,
-        groupOrder: 5,
-        order: 4,
+        group: 'Legs',
+        groupOrder: GROUP_ORDER.Legs,
+        order: 14,
         tier: 'B'
       });
     }
@@ -785,6 +926,8 @@ export const ElephantModule = {
     return (
       key.startsWith('skeleton.') ||
       key.startsWith('limbMesh.') ||
+      key.startsWith('torso.') ||
+      key.startsWith('tusk.') ||
       key === 'lowPoly' ||
       key === 'bodyColor'
     );
@@ -795,6 +938,7 @@ export const ElephantModule = {
     const merged = { ...defaults, ...tuning };
     const definition = buildDefinitionForSkeleton(merged);
     const limbMesh = buildLimbMeshConfig(merged);
+    const torso = buildTorsoConfig(merged);
     const ringsOverlay = buildRingsConfig(merged);
     const scale = getNumber(merged['global.scale'], merged.scale);
     const showSkeleton = merged['debug.showSkeleton'] ?? merged.showSkeleton;
@@ -809,6 +953,7 @@ export const ElephantModule = {
         variantSeed: merged.variantSeed,
         debugRings: ringsOverlay,
         limbMesh,
+        torso,
         headScale: getNumber(merged['skeleton.headScale'], 1),
         definition
       });

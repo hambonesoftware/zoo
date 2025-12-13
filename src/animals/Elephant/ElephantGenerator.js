@@ -73,6 +73,16 @@ export class ElephantGenerator {
       options.lowPolyTailSides >= 3
         ? options.lowPolyTailSides
         : 8;
+    const torsoOptions = options.torso || {};
+    const torsoRadiusScale =
+      typeof torsoOptions.radiusScale === 'number' ? torsoOptions.radiusScale : 1;
+    const torsoBulge =
+      typeof torsoOptions.bulge === 'number' ? torsoOptions.bulge : 0.4;
+    const torsoRingsPerSegment = Math.max(0, Math.floor(torsoOptions.ringsPerSegment ?? 0));
+    const torsoSidesOverride =
+      typeof torsoOptions.sides === 'number' ? Math.max(3, Math.floor(torsoOptions.sides)) : null;
+    const torsoLowPolySegmentsOverride =
+      typeof torsoOptions.sides === 'number' ? Math.max(3, Math.floor(torsoOptions.sides)) : null;
 
     const legSidesLowPoly =
       typeof options.lowPolyLegSides === 'number' &&
@@ -216,13 +226,17 @@ export class ElephantGenerator {
       back_right_foot: 0.44 * legScale
     };
 
+    const torsoSides = torsoSidesOverride ?? 28;
+    const torsoLowPolySegments = torsoLowPolySegmentsOverride ?? lowPolyTorsoSegments;
+
     const torsoGeometry = generateTorsoGeometry(skeleton, {
       bones: ['spine_base', 'spine_mid', 'spine_neck'],
       // [hips, ribcage, neck base]
-      radii: [1.15 * headScale, 1.35, 1.0 * headScale],
-      sides: 28,
+      radii: [1.15 * headScale * torsoRadiusScale, 1.35 * torsoRadiusScale, 1.0 * headScale * torsoRadiusScale],
+      sides: torsoSides,
       radiusProfile: torsoRadiusProfile,
-      rumpBulgeDepth: 0.4,
+      rumpBulgeDepth: torsoBulge,
+      ringsPerSegment: torsoRingsPerSegment,
       extendRumpToRearLegs: {
         bones: [
           'back_left_foot',
@@ -236,7 +250,7 @@ export class ElephantGenerator {
         boneRadii: rearLegRadii
       },
       lowPoly,
-      lowPolySegments: lowPoly ? lowPolyTorsoSegments : undefined,
+      lowPolySegments: lowPoly ? torsoLowPolySegments : undefined,
       lowPolyWeldTolerance: lowPoly ? lowPolyTorsoWeldTolerance : 0
     });
 
