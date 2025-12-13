@@ -1,333 +1,220 @@
-````md
-# Agents.md — Zoo CreatureStudio: Elephant Ring + Skeleton Knobs (Tier A + Tier B)
+# Agents.md
+# Zoo CreatureStudio UI/UX Upgrade Agent Instructions
 
-You are a repo agent working in the **Zoo** repository:
-
-- https://github.com/hambonesoftware/zoo
-
-This Agents.md updates the prior studio plan to add **real, high-impact tuning controls** for the elephant:
-- **Tier A (instant):** a *debug rings overlay* that updates live (no rebuild)
-- **Tier B (debounced rebuild):** skeleton length + real limb mesh radius/ring controls (regenerate geometry)
-
-The plan assumes the Zoo-based CreatureStudio UI overlay already exists (animal dropdown, tuning panel, presets, reset, etc.).
-If it does not, implement the base studio first and then proceed.
-
----
+Repo: https://github.com/hambonesoftware/zoo
 
 ## Mission
-Deliver a Zoo-identical CreatureStudio where the user can:
-1) Live-adjust **limb “ring” visualization** (radius/placement/count) instantly via a debug overlay.
-2) Adjust **elephant skeleton segment lengths** (legs/spine/neck/trunk) with a debounced rebuild.
-3) Adjust **elephant limb thickness profile and ring density** in the actual limb mesh generation with a debounced rebuild.
-
-All results must remain **Zoo-style** (same renderer, same generator pipeline, same material conventions).
-No “second pipeline,” no blueprint compiler.
-
----
+Upgrade the **CreatureStudio UI inside the Zoo repo** so it is usable at **100% browser zoom** and feels like a real editor:
+- Docked, scrollable, collapsible, resizable tuning panel
+- Camera framing tools so users don’t “browser-zoom” to see the animal
+- Grouped controls + search + per-control reset + numeric inputs
+- Tier A instant apply vs Tier B debounced rebuild
+- Presets + Undo/Redo + Export tuning JSON
 
 ## Non-Negotiables
-- Preserve **WebGPU-only** behavior (Zoo’s stance).
-- Default tuning must render **exactly like current Zoo elephant**.
-- No hidden fallbacks: if rebuild fails, show a visible error overlay and keep last valid creature.
-- Prevent resource leaks: always dispose geometries/materials when rebuilding.
-- Keep changes surgical and minimal.
+- Do NOT introduce a second renderer or blueprint pipeline.
+- UI must be screen-space and remain readable regardless of camera zoom.
+- Preserve existing Zoo visual parity at default tuning.
+- Must not leak meshes/materials during rebuilds or animal switching.
+
+## Ground Rules
+- First, locate the existing “studio mode” entrypoint and UI overlay files.
+- Implement Phase 1 completely before attempting Phase 2+.
+- Prefer minimal dependencies; if a GUI lib exists already, use it only if it doesn’t fight the new layout.
 
 ---
 
-## Concepts
-### Tier A (Instant)
-- Debug visualization overlays (rings drawn as separate meshes/lines) that move/rescale on every slider tick.
-- Must not require mesh rebuild or skeleton rebinding.
+## Phase 0 — Repo Recon (Required)
+1) Find:
+- Studio entrypoint / route / mode switch
+- Current tuning panel implementation (the long right-side list)
+- Current camera controls / OrbitControls usage
+- How animals are mounted/unmounted
+- Where `getTuningSchema()`, `getDefaultTuning()`, `applyTuning()`, `rebuild()` live
 
-### Tier B (Debounced Rebuild)
-- Anything that changes:
-  - bone rest offsets / segment lengths
-  - mesh generator radii profiles
-  - ring density / sides count
-- Rebuild at most ~5–10x/sec while dragging via debounce (100–250ms).
+2) Identify:
+- The current DOM container where the studio overlay is injected
+- Any CSS file(s) controlling overlay styles
 
----
-
-## Phase 1 — Expand Elephant Tuning Schema + Implement Debug Rings Overlay (Tier A)
-
-### 1.1 Add new Elephant tuning schema + defaults
-In `ElephantModule.getTuningSchema()` and `ElephantModule.getDefaultTuning()` add:
-
-#### Global / Debug
-- `global.scale` (already exists)
-- `global.rotateY` (already exists)
-- `debug.showSkeleton` (already exists)
-
-#### Debug Rings Overlay (Tier A)
-Global settings:
-- `debugRings.enabled` (bool)
-- `debugRings.global.radiusScale` (0.2..3.0)
-- `debugRings.global.thickness` (0.002..0.08) (units in scene scale)
-- `debugRings.global.opacity` (0.05..1.0)
-- `debugRings.global.offsetX` (-1..1)
-- `debugRings.global.offsetY` (-1..1)
-- `debugRings.global.offsetZ` (-1..1)
-
-Per limb (repeat for: `frontLeft`, `frontRight`, `backLeft`, `backRight`):
-- `debugRings.frontLeft.enabled` (bool) (optional; or inherit global enabled)
-- `debugRings.frontLeft.radiusScale` (0.2..3.0)
-- `debugRings.frontLeft.count` (2..24)
-- `debugRings.frontLeft.startT` (0..1)
-- `debugRings.frontLeft.endT` (0..1)
-- `debugRings.frontLeft.bias` (-1..1)
-- Optional per-limb offsets:
-  - `debugRings.frontLeft.offsetX/Y/Z` (-1..1)
-
-Schema format requirement:
-```js
-{
-  "debugRings.frontLeft.count": { label, min, max, step, type: "int", group: "Debug Rings / Front Left" },
-  ...
-}
-````
+Create a quick map in notes (not committed unless desired):
+- “Studio boot path”
+- “Tuning panel render path”
+- “Camera object + controls”
 
 ---
 
-### 1.2 Create RingsOverlay implementation (Tier A)
-
-Add a file:
-
-* `src/animals/Elephant/debug/RingsOverlay.js`
-
-RingsOverlay responsibilities:
-
-* Construct and manage ring meshes (or line rings) attached under a `root` group.
-* Provide:
-
-  * `setVisible(bool)`
-  * `update(tuning, bonesByName)`
-  * `dispose()`
-
-How placement works:
-
-* For each limb, define the limb chain as bone names:
-
-  * frontLeft: upper → lower → foot (or shoulder → upper → lower → foot if available)
-  * frontRight: same
-  * backLeft/backRight: similar
-* Compute start and end points:
-
-  * Use `bone.matrixWorld` positions for start/end anchors.
-* Place rings:
-
-  * Generate `count` values of `u` in [0..1]
-  * Map to `t` within `[startT..endT]` using a bias curve:
-
-    * `t = biasCurve(u, bias)` then `t = lerp(startT, endT, t)`
-  * Position = `lerp(startPos, endPos, t) + offsets`
-* Radius:
-
-  * base ring radius scaled by `debugRings.global.radiusScale * debugRings.<limb>.radiusScale`
-* If `count` changed: recreate ring meshes; otherwise reuse meshes and update transforms.
-
-Implementation notes:
-
-* Keep it lightweight: use `THREE.TorusGeometry` or a simple ring line geometry.
-* If using material opacity, set `transparent: true` and update material opacity on change.
-* RingsOverlay must not rely on limb mesh generation; it is purely a debug overlay.
-
----
-
-### 1.3 Wire Tier A changes into ElephantModule.applyTuning()
-
-In Elephant’s module instance (returned by `build()`):
-
-* Store:
-
-  * `this.ringsOverlay`
-  * `this.skeletonHelper` (if present)
-  * `this.tuning` (last applied tuning)
-
-`applyTuning(tuning)` must:
-
-* Apply transforms (scale/rotate) to the animal root.
-* Toggle skeleton helper visibility based on `debug.showSkeleton`.
-* Call `ringsOverlay.update(tuning, bonesByName)`.
-
-Acceptance criteria (Phase 1):
-
-* Dragging debug ring sliders updates ring count, radius, and placement instantly.
-* No rebuild occurs during Tier A changes.
-* Switching animals properly disposes overlays.
-
----
-
-## Phase 2 — Add Tier B Rebuild: Skeleton Length + Limb Mesh Radii/Ring Density (Debounced)
-
-### 2.1 Extend tuning schema for Tier B rebuild keys
-
-#### Skeleton Length (Tier B)
-
-Front legs:
-
-* `skeleton.front.upperLenScale` (0.5..2.0)
-* `skeleton.front.lowerLenScale` (0.5..2.0)
-* `skeleton.front.footLenScale` (0.5..2.0)
-
-Back legs:
-
-* `skeleton.back.upperLenScale` (0.5..2.0)
-* `skeleton.back.lowerLenScale` (0.5..2.0)
-* `skeleton.back.footLenScale` (0.5..2.0)
-
-Body:
-
-* `skeleton.spineLenScale` (0.5..2.0)
-* `skeleton.neckLenScale` (0.5..2.0)
-
-Head:
-
-* `skeleton.headScale` (0.5..2.0)
-
-Trunk:
-
-* `skeleton.trunkLenScale` (0.5..2.0)
-
-#### Limb Mesh Profile (Tier B)
-
-Per limb (repeat for each limb):
-
-* `limbMesh.frontLeft.upperRadius` (0.05..2.0)
-* `limbMesh.frontLeft.kneeRadius` (0.05..2.0)
-* `limbMesh.frontLeft.ankleRadius` (0.05..2.0)
-* `limbMesh.frontLeft.footRadius` (0.05..2.0)
-* Optional:
-
-  * `limbMesh.frontLeft.footFlare` (-1.0..1.0)
-
-#### Limb Mesh Ring Density / LowPoly
-
-* `limbMesh.ringsPerSegment` (2..24) (int)
-* `limbMesh.sides` (3..48) (int)
-* `render.lowPoly` (bool) can map to `limbMesh.sides` preset if already present.
-
----
-
-### 2.2 Implement ElephantModule.rebuild(tuning) and disposal
-
-Add `rebuild(tuning)` to elephant instance with:
-
-1. Dispose old skinned meshes and materials.
-2. Dispose old skeleton helper and overlay objects.
-3. Build a modified elephant definition/rest pose:
-
-   * Multiply relevant bone local offsets by segment scales (proportional).
-   * Apply head scale if definition supports it (or scale head group if not).
-   * Apply trunk length scaling by scaling trunk bone offsets.
-4. Generate meshes using the same generator pipeline (Zoo elephant):
-
-   * Pass updated limb radii profiles into limb generation.
-   * Pass ring density: `ringsPerSegment` and `sides`.
-5. Recreate skeleton helper + rings overlay.
-6. Reapply Tier A tuning immediately after rebuild so overlays match.
-
-If rebuild fails:
-
-* Show an on-screen error overlay (do not crash).
-* Keep the last valid creature mounted (no blank scene).
-
----
-
-### 2.3 Debounce rebuild calls in the Tuning UI
-
-Update the studio tuning panel logic:
-
-* Determine which keys are Tier A vs Tier B.
-
-  * Tier A: `global.*` transforms, `debug.*`, `debugRings.*`
-  * Tier B: `skeleton.*`, `limbMesh.*`, anything affecting geometry/skeleton
-* On Tier A changes:
-
-  * call `animal.applyTuning(tuning)` immediately
-* On Tier B changes:
-
-  * call a debounced function that calls `animal.rebuild(tuning)` after 100–250ms
-* Ensure repeated dragging cancels pending rebuild timers.
-
-Acceptance criteria (Phase 2):
-
-* Changing skeleton or limb mesh knobs rebuilds the elephant smoothly (debounced).
-* No geometry duplication in the scene after repeated rebuilds.
-* Memory does not balloon during repeated rebuilds (dispose is correct).
-* Default tuning continues to match Zoo elephant exactly.
-
----
-
-## Optional Phase 2.5 — True Limb Ring Placement Control for Actual Limb Mesh
-
-Only do this if needed. This adds non-uniform ring placement for the generated limb mesh.
-
-Modify the limb geometry generator (commonly `LimbGenerator.generateLimbGeometry()`):
-
-* Allow either:
-
-  * `tStops` array (explicit ring positions along segment)
-  * OR a `distributionFn(u)->t`
-* Replace uniform `t=i/(rings-1)` with the custom distribution.
-
-Add tuning keys:
-
-* `limbMesh.ringBias` (-1..1)
-* `limbMesh.startT`, `limbMesh.endT` (0..1) (optional)
-
-Acceptance criteria:
-
-* Limb mesh ring spacing visibly shifts with placement/bias sliders.
-
----
-
-## File Targets (Expected)
-
-These are typical files; locate the actual ones in the repo and adapt.
+## Phase 1 — Usability Fix (Layout + Camera Framing)
+### 1.1 Implement Docked Panel (fixed)
+Create/modify a panel component (vanilla or existing UI approach) with:
+- `position: fixed; top: 12px; right: 12px; bottom: 12px;`
+- `width: clamp(320px, 24vw, 520px);`
+- `max-height: calc(100vh - 24px); overflow: auto;`
+- Sticky header inside panel:
+  - Title
+  - Search input (wire later)
+  - Collapse button
+  - Reset button
+
+Add CSS that guarantees:
+- readable font size (>= 13–14px)
+- slider hit areas not tiny
+- padding and spacing consistent
+
+### 1.2 Collapsed Mode
+Implement:
+- collapsed boolean state persisted in localStorage
+- collapsed UI becomes a small right-edge pill button
+- clicking pill expands panel
+
+### 1.3 Resizable Width
+Implement:
+- a left-edge drag handle (8px wide)
+- drag updates panel width in px, clamped between:
+  - min 320px
+  - max 520px (or 600px on large screens)
+- persist width in localStorage
+
+### 1.4 Camera Framing
+Implement `frameAnimal()`:
+- compute Box3 from the current animal root Object3D
+- compute bounding sphere
+- set OrbitControls target to sphere center
+- set camera distance to fit sphere in view
+
+Suggested math:
+- `distance = (radius / Math.sin(fov/2)) * 1.15`
+- position camera along current view direction:
+  - `dir = camera.position.clone().sub(controls.target).normalize()`
+  - `camera.position = target + dir * distance`
+- call `controls.update()`
 
 Add:
+- Frame button in UI (header or near animal dropdown)
+- Hotkey `F` for frame
+- Hotkey `R` for reset camera to default studio rig
 
-* `src/animals/Elephant/debug/RingsOverlay.js`
+### 1.5 Responsive Bottom Sheet
+If window width < 900px:
+- switch panel to bottom sheet layout (fixed bottom, 45vh height)
+- ensure it remains scrollable
+- collapse still works
 
-Modify (likely):
-
-* `src/animals/modules/ElephantModule.js` (or wherever the Elephant module is)
-* `src/ui/TuningPanel.js` (or studio overlay UI)
-* `src/pens/AnimalStudioPen.js` (only if debug root needed)
-* Limb generator file (only if Phase 2.5): `src/animals/bodyParts/LimbGenerator.js` (or equivalent)
-
----
-
-## Testing / Verification Checklist
-
-* [ ] Studio runs WebGPU-only as before.
-* [ ] Elephant default is unchanged (visual parity).
-* [ ] Tier A rings overlay updates instantly while dragging.
-* [ ] Tier B skeleton/limb mesh knobs rebuild smoothly with debounce.
-* [ ] No duplicated grids/walls/rings after switching animals.
-* [ ] No console errors during normal use.
-* [ ] Resource disposal verified:
-
-  * geometries disposed
-  * materials disposed
-  * overlays disposed
-  * old roots removed
-* [ ] Preset save/load still works and includes the new tuning keys.
+**Phase 1 Acceptance**
+- 100% browser zoom is usable
+- Framing works reliably for elephant and other animals
+- Panel readable, scrollable, collapsible, resizable
 
 ---
 
-## Implementation Order (Do Exactly This)
+## Phase 2 — “Pro Editor” Controls (Grouping, Search, Precision, Tiering)
+### 2.1 Schema Metadata Support
+Update schema format to include:
+- `group`, `order`, `tier`, `type`, `min/max/step`
+- optional: `fineStep`, `unit`, `format`
 
-1. Add schema + defaults for `debugRings.*`.
-2. Implement RingsOverlay and wire it into `applyTuning()`.
-3. Confirm Tier A sliders work with no rebuild.
-4. Add schema + defaults for `skeleton.*` and `limbMesh.*`.
-5. Implement `rebuild(tuning)` with proper disposal and regeneration.
-6. Wire Tier B keys to debounced rebuild from the UI controller.
-7. (Optional) Implement limb generator placement controls (Phase 2.5).
+### 2.2 Grouped Accordions
+Render groups:
+- sort groups by configured order
+- inside each group, sort by `order`
+- use collapsible sections with saved open/closed state (localStorage)
+
+### 2.3 Control Rows
+For numeric controls:
+- slider + numeric input box
+- per-control reset button/icon
+
+Interactions:
+- holding Shift uses fineStep
+- double-click numeric resets
+
+For bool:
+- checkbox/toggle with label
+For enum:
+- dropdown
+
+### 2.4 Search
+Wire the header search input:
+- filter by label + key + group
+- if no match, show “No controls found”
+
+### 2.5 Tier Logic
+In the tuning state manager:
+- Tier A keys call `animal.applyTuning()` immediately
+- Tier B keys trigger debounced `animal.rebuild()` (150–250ms)
+
+Add “Rebuilding…” indicator when rebuild scheduled/in progress.
+
+**Phase 2 Acceptance**
+- Controls are navigable and not overwhelming
+- Search works
+- Tier A feels instant, Tier B stable
+
+---
+
+## Phase 3 — Workflow: Presets + Undo/Redo + Export
+### 3.1 Presets
+Implement:
+- preset name input
+- save/load/delete
+- persist to localStorage as:
+  - `{ speciesId, schemaVersion, tuning, createdAt, updatedAt }`
+
+### 3.2 Undo/Redo
+Implement tuning-only history:
+- Ctrl+Z / Ctrl+Y
+- store snapshots or diffs (snapshots ok first)
+- max 50 entries
+- applying an undo step respects tier logic (apply vs rebuild)
+
+### 3.3 Export
+Add:
+- Export tuning JSON
+- Export preset bundle JSON
+If existing “Export OBJ (debug)” exists, keep it and add adjacent actions.
+
+**Phase 3 Acceptance**
+- Presets survive reload
+- Undo/redo is reliable
+- Export produces stable JSON
+
+---
+
+## Implementation Targets (Expected, Adapt to Repo)
+Create a dedicated studio UI folder if it doesn’t exist:
+- `src/studio/StudioShell.js`
+- `src/studio/StudioPanel.js`
+- `src/studio/StudioState.js`
+- `src/studio/StudioCamera.js`
+- `src/studio/studio.css`
+
+If the repo already has equivalents, modify them instead of duplicating.
+
+---
+
+## Commands
+Run whatever the repo uses (likely):
+- `npm install`
+- `npm run dev`
+
+Verify in browser:
+- elephant + cat
+- switching animals
+- frame/reset
+- tier A vs tier B knobs
+- preset save/load
+- undo/redo
+- export json
+
+---
+
+## Final QA Checklist (Do Not Skip)
+- [ ] 100% browser zoom usable
+- [ ] panel scroll works independently from page
+- [ ] collapse/resize persist
+- [ ] frame/reset camera works
+- [ ] no duplicated helpers on animal switch
+- [ ] no console spam during normal use
+- [ ] rebuild disposal correct (no accumulating meshes/materials)
+- [ ] presets + undo/redo stable
 
 End of Agents.md
-
-```
-::contentReference[oaicite:0]{index=0}
-```
