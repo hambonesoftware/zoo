@@ -5,10 +5,12 @@
 
 import { CatModule } from './Cat/CatModule.js';
 import { ElephantModule } from './Elephant/ElephantModule.js';
+import { SnakeModule } from './Snake/SnakeModule.js';
 
 export const AnimalRegistry = {
   cat: CatModule,
-  elephant: ElephantModule
+  elephant: ElephantModule,
+  snake: SnakeModule
 };
 
 export function getRegisteredAnimals() {

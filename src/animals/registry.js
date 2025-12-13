@@ -10,6 +10,8 @@ import { ElephantCreature } from './Elephant/ElephantCreature.js';
 import { ElephantPen } from './Elephant/ElephantPen.js';
 import { GorillaCreature } from './Gorilla/GorillaCreature.js';
 import { GorillaPen } from './Gorilla/GorillaPen.js';
+import { SnakeCreature } from './Snake/SnakeCreature.js';
+import { SnakePen } from './Snake/SnakePen.js';
 
 export const animalsRegistry = {
   cat: {
@@ -48,6 +50,17 @@ export const animalsRegistry = {
     },
     createCreature(options = {}) {
       return new GorillaCreature(options);
+    }
+  },
+
+  snake: {
+    id: 'snake',
+    label: 'Snake',
+    createPen(scene, options = {}) {
+      return new SnakePen(scene, options);
+    },
+    createCreature(options = {}) {
+      return new SnakeCreature(options);
     }
   }
 };
