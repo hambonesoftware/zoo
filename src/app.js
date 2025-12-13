@@ -1,9 +1,7 @@
 // src/app.js
 
-import * as THREE from 'three';
 import { createWorld } from './world.js';
-import { Zoo } from './zoo/Zoo.js';
-import { animalsRegistry, getDiscoveredAnimals } from './animals/registry.js';
+import { AnimalRegistry, getRegisteredAnimals } from './animals/AnimalRegistry.js';
 import { SoundFontEngine } from './audio/SoundFontEngine.js';
 import { TheoryEngine } from './music/TheoryEngine.js';
 import { AnimalMusicBrain } from './music/AnimalMusicBrain.js';
@@ -11,6 +9,7 @@ import { MUSIC_PROFILES, getProfileForAnimal } from './music/MusicProfiles.js';
 import { MusicEngine } from './music/MusicEngine.js';
 import { NoteHighway } from './ui/NoteHighway.js';
 import { downloadAsOBJ } from './debug/exporters.js';
+import { TuningPanel } from './ui/TuningPanel.js';
 
 function isWebGPUSupported() {
   try {
@@ -31,14 +30,17 @@ class App {
 
     // Create the world (scene, camera, controls, renderer)
     const container = document.body;
-    const { scene, camera, controls, renderer } = createWorld(container, {
-      preferWebGPU: this.webgpuSupported
+    const defaultAnimalType = 'cat';
+    this.currentAnimalType = defaultAnimalType;
+    this.world = createWorld(container, {
+      preferWebGPU: this.webgpuSupported,
+      defaultAnimal: defaultAnimalType
     });
 
-    this.scene = scene;
-    this.camera = camera;
-    this.controls = controls;
-    this.renderer = renderer;
+    this.scene = this.world.scene;
+    this.camera = this.world.camera;
+    this.controls = this.world.controls;
+    this.renderer = this.world.renderer;
 
     // Audio + music subsystems
     this.soundFontEngine = new SoundFontEngine();
@@ -52,21 +54,9 @@ class App {
     this.audioReady = false;
     this.setupAudioBootstrap();
 
-    const defaultAnimalType = 'cat';
-
-    // Create the zoo with a default animal
-    this.zooOptions = {
-      penCount: 1,
-      spacing: 10,
-      animalType: defaultAnimalType,
-      camera: this.camera,
-      controls: this.controls
-    };
-
-    this.zoo = new Zoo(this.scene, this.zooOptions);
-
     // UI wiring
     this.setupAnimalDropdown(defaultAnimalType);
+    this.setupTuningPanel(defaultAnimalType);
     this.setupDebugPanel();
     this.setupExportHooks();
 
@@ -126,10 +116,10 @@ class App {
     const select = document.getElementById('animal-select');
     if (!select) return;
 
-    const animals = getDiscoveredAnimals();
+    const animals = getRegisteredAnimals();
 
     for (const key of animals) {
-      const entry = animalsRegistry[key];
+      const entry = AnimalRegistry[key];
       const option = document.createElement('option');
       option.value = key;
       option.textContent = entry.label ?? key;
@@ -141,8 +131,43 @@ class App {
 
     select.addEventListener('change', () => {
       const type = select.value;
-      this.zoo.setAnimalType(type);
+      this.currentAnimalType = type;
+      this.world.setAnimalType(type);
+      this.syncTuningPanel(type);
     });
+  }
+
+  setupTuningPanel(defaultAnimalType) {
+    this.tuningPanel = new TuningPanel({
+      onTuningChange: (patch) => {
+        this.world.applyTuning(patch);
+      },
+      onReset: () => {
+        const module = AnimalRegistry[this.currentAnimalType];
+        if (!module) return;
+        const defaults = module.getDefaultTuning ? module.getDefaultTuning() : {};
+        this.world.setAnimalType(this.currentAnimalType, defaults);
+        this.tuningPanel.setSchema(module.getTuningSchema?.() || {}, defaults, this.currentAnimalType);
+      },
+      onPresetLoad: (values) => {
+        this.world.setAnimalType(this.currentAnimalType, values);
+        const module = AnimalRegistry[this.currentAnimalType];
+        const schema = module?.getTuningSchema ? module.getTuningSchema() : {};
+        this.tuningPanel.setSchema(schema, values, this.currentAnimalType);
+      }
+    });
+
+    this.syncTuningPanel(defaultAnimalType);
+  }
+
+  syncTuningPanel(animalType) {
+    if (!this.tuningPanel) return;
+    const module = AnimalRegistry[animalType];
+    if (!module) return;
+    const schema = module.getTuningSchema ? module.getTuningSchema() : {};
+    const info = this.world.getDebugInfo ? this.world.getDebugInfo() : {};
+    const current = info.tuning || (module.getDefaultTuning ? module.getDefaultTuning() : {});
+    this.tuningPanel.setSchema(schema, current, animalType);
   }
 
   setupDebugPanel() {
@@ -205,17 +230,15 @@ class App {
         await this.renderer.init();
       } catch (error) {
         console.warn('[Zoo] WebGPU renderer failed to initialize; rebuilding world with WebGL.', error);
-        const fallback = createWorld(document.body, { preferWebGPU: false });
+        const fallback = createWorld(document.body, {
+          preferWebGPU: false,
+          defaultAnimal: 'cat'
+        });
+        this.world = fallback;
         this.scene = fallback.scene;
         this.camera = fallback.camera;
         this.controls = fallback.controls;
         this.renderer = fallback.renderer;
-        this.zooOptions = {
-          ...this.zooOptions,
-          camera: this.camera,
-          controls: this.controls
-        };
-        this.zoo = new Zoo(this.scene, this.zooOptions);
       }
     }
     this.animate(0);
@@ -233,8 +256,10 @@ class App {
     const dt = (time - this.lastTime) * 0.001;
     this.lastTime = time;
 
-    // Update zoo (pens and animals)
-    this.zoo.update(dt);
+    // Update active pen + animal
+    if (this.world && typeof this.world.update === 'function') {
+      this.world.update(dt);
+    }
 
     // Update controls
     this.controls.update();
@@ -249,11 +274,11 @@ class App {
 
     // Debug info
     if (this.debugFields) {
-      const info = this.zoo.getDebugInfo ? this.zoo.getDebugInfo() : {};
-      const pensCount = info.penCount ?? (Array.isArray(this.zoo.pens) ? this.zoo.pens.length : 0);
+      const info = this.world && this.world.getDebugInfo ? this.world.getDebugInfo() : {};
+      const pensCount = info.penCount ?? 1;
 
       if (this.debugFields.animal) {
-        this.debugFields.animal.textContent = info.animalType || this.zoo.currentAnimalType || 'unknown';
+        this.debugFields.animal.textContent = info.animalType || 'unknown';
       }
       if (this.debugFields.pens) {
         this.debugFields.pens.textContent = String(pensCount);
@@ -284,24 +309,21 @@ class App {
 }
 
 export function exportCurrentPenAsOBJ(app) {
-  const zoo = app ? app.zoo : null;
+  const world = app ? app.world : null;
 
-  if (!zoo) {
-    console.warn('[Zoo] Cannot export OBJ: zoo instance missing on app.');
+  if (!world) {
+    console.warn('[Zoo] Cannot export OBJ: world instance missing on app.');
     return;
   }
 
+  const info = world.getDebugInfo ? world.getDebugInfo() : {};
+
   console.info('[Zoo] Attempting OBJ export for current pen.', {
-    animalType: zoo.currentAnimalType,
-    penCount: Array.isArray(zoo.pens) ? zoo.pens.length : undefined
+    animalType: info.animalType,
+    penCount: info.penCount
   });
-  const pen = zoo
-    ? typeof zoo.getActivePen === 'function'
-      ? zoo.getActivePen()
-      : zoo.pens && zoo.pens.length > 0
-        ? zoo.pens[0]
-        : null
-    : null;
+
+  const pen = typeof world.getActivePen === 'function' ? world.getActivePen() : null;
 
   if (!pen || typeof pen.getExportRoot !== 'function') {
     console.warn('[Zoo] No exportable pen or getExportRoot() not implemented.');
@@ -314,8 +336,8 @@ export function exportCurrentPenAsOBJ(app) {
     return;
   }
 
-  const animalType = zoo && zoo.currentAnimalType ? zoo.currentAnimalType : null;
-  const registryEntry = animalType ? animalsRegistry[animalType] : null;
+  const animalType = info.animalType || null;
+  const registryEntry = animalType ? AnimalRegistry[animalType] : null;
   const label = pen.label || (registryEntry ? registryEntry.label : null) || animalType || 'animal';
   const safeLabel = label.toString().trim().toLowerCase().replace(/\s+/g, '_');
   const filename = `${safeLabel || 'animal'}_highpoly.obj`;
