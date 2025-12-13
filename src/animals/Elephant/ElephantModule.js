@@ -6,6 +6,7 @@ import { ElephantDefinition } from './ElephantDefinition.js';
 
 const DEFAULT_Y_OFFSET = 1.37; // padHeight (0.17) + elephant base height (~1.2)
 const TUNING_SCHEMA_VERSION = '1.1.0';
+const BONE_OFFSET_PREFIX = 'boneOffset';
 
 const LIMB_KEYS = ['frontLeft', 'frontRight', 'backLeft', 'backRight'];
 
@@ -115,7 +116,29 @@ function buildDefinitionForSkeleton(tuning) {
   applyScaleToBone(def.bones, 'tusk_left_tip', tuskLenScale);
   applyScaleToBone(def.bones, 'tusk_right_tip', tuskLenScale);
 
+  for (const bone of def.bones) {
+    const baseKey = `${BONE_OFFSET_PREFIX}.${bone.name}`;
+    const offset = {
+      x: getNumber(tuning[`${baseKey}.x`], 0),
+      y: getNumber(tuning[`${baseKey}.y`], 0),
+      z: getNumber(tuning[`${baseKey}.z`], 0)
+    };
+    if (offset.x || offset.y || offset.z) {
+      applyOffsetToBone(def.bones, bone.name, offset);
+    }
+  }
+
   return def;
+}
+
+function buildBoneOffsetDefaults(definition) {
+  const defaults = {};
+  for (const bone of definition.bones) {
+    defaults[`${BONE_OFFSET_PREFIX}.${bone.name}.x`] = 0;
+    defaults[`${BONE_OFFSET_PREFIX}.${bone.name}.y`] = 0;
+    defaults[`${BONE_OFFSET_PREFIX}.${bone.name}.z`] = 0;
+  }
+  return defaults;
 }
 
 function buildLimbMeshConfig(tuning) {
@@ -347,7 +370,7 @@ export const ElephantModule = {
       base[`debugRings.${limb}.offsetZ`] = 0;
     }
 
-    return base;
+    return { ...base, ...buildBoneOffsetDefaults(ElephantDefinition) };
   },
 
   getTuningSchemaVersion() {
@@ -366,14 +389,15 @@ export const ElephantModule = {
     const GROUP_ORDER = {
       Global: 0,
       Skeleton: 1,
-      Torso: 2,
-      Trunk: 3,
-      Tusks: 4,
-      Legs: 5,
-      Materials: 6,
-      Debug: 7,
-      'Debug Rings': 8,
-      Advanced: 9
+      Bones: 2,
+      Torso: 3,
+      Trunk: 4,
+      Tusks: 5,
+      Legs: 6,
+      Materials: 7,
+      Debug: 8,
+      'Debug Rings': 9,
+      Advanced: 10
     };
 
     const make = (key, { label, group = 'Global', order = 0, tier = 'A', type = 'float', groupOrder, ...rest }) => ({
@@ -522,6 +546,29 @@ export const ElephantModule = {
         tier: 'A',
         advanced: true
       }),
+      ...(() => {
+        const entries = {};
+        const boneLabel = (name) => name.replace(/_/g, ' ');
+        for (const bone of ElephantDefinition.bones) {
+          const baseKey = `${BONE_OFFSET_PREFIX}.${bone.name}`;
+          const baseLabel = boneLabel(bone.name);
+          for (const axis of ['x', 'y', 'z']) {
+            const key = `${baseKey}.${axis}`;
+            entries[key] = make(key, {
+              label: `${baseLabel} ${axis.toUpperCase()} Offset`,
+              min: -1.5,
+              max: 1.5,
+              step: 0.01,
+              group: 'Bones',
+              groupOrder: GROUP_ORDER.Bones,
+              order: 400 + Object.keys(entries).length,
+              tier: 'B',
+              format: 3
+            });
+          }
+        }
+        return entries;
+      })(),
       'skeleton.spineLenScale': make('skeleton.spineLenScale', {
         label: 'Spine Len ×',
         min: 0.5,
@@ -925,6 +972,7 @@ export const ElephantModule = {
     if (!key) return false;
     return (
       key.startsWith('skeleton.') ||
+      key.startsWith(`${BONE_OFFSET_PREFIX}.`) ||
       key.startsWith('limbMesh.') ||
       key.startsWith('torso.') ||
       key.startsWith('tusk.') ||
