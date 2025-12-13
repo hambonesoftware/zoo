@@ -33,17 +33,13 @@ export class ElephantLocomotion {
     // Walk cycle phase: 0..1
     this.gaitPhase = 0;
 
-    // Base speed. 
-    this.walkSpeed = 0.6; 
-    this._gaitFrequency = this.walkSpeed * 0.8; // Slower frequency for heavy look
+    // Base speed. We interpret this as "cycles per second" (step frequency).
+    this.walkSpeed = 0.6;
+    // Gait frequency (cycles per second). For a heavy animal we keep this fairly low.
+    this._gaitFrequency = this.walkSpeed;
 
-    // Base height offset for the root (hips).
-    this.baseHeight = 1.0;
-
-    // Timer for idle breathing / subtle motion
-    this._idleTime = 0;
-
-    // Heading management
+    // Direction (XZ plane). We'll move the root along +Z in its local space,
+    // but we keep a stable "desired direction" for heading logic.
     this.direction = new THREE.Vector3(0, 0, 1);
 
     // Environment / enclosure settings
@@ -53,18 +49,18 @@ export class ElephantLocomotion {
     this.pondCenter = new THREE.Vector3();
     this.pondRadius = 1.4;
     this.sizeScale = 1.0;
-    this.boundarySoftRadius = 0.75; 
+    this.boundarySoftRadius = 0.75;
 
     // Behaviour timers
     this.lastDrinkTime = -Infinity;
-    this.drinkCooldown = 25; 
+    this.drinkCooldown = 25;
     this.drinkDuration = 6.0;
-    this.drinkApproachDistance = 0.8; 
+    this.drinkApproachDistance = 0.8;
 
     this.lastExcitedTime = -Infinity;
-    this.excitedCooldown = 14; 
+    this.excitedCooldown = 14;
     this.excitedDuration = 3.5;
-    this.excitedChance = 0.12; 
+    this.excitedChance = 0.12;
 
     // Global time tracker
     this._time = 0;
@@ -100,61 +96,85 @@ export class ElephantLocomotion {
     this._rootInitialY = null;
     this.groundHeight = 0;
     this._groundCalibrated = false;
+
+    // Idle timer for subtle motion
+    this._idleTime = 0;
+
+    // Gait parameters
+    this.gait = {
+      // Fraction of the cycle spent in swing (foot in the air).
+      // Elephants have a high duty factor, so stance > swing.
+      swingDuration: 0.3,
+      // Lateral-sequence phase offsets (0..1)
+      // BL -> FL -> BR -> FR
+      phaseOffsets: {
+        BL: 0.0,
+        FL: 0.25,
+        BR: 0.5,
+        FR: 0.75,
+      },
+      // Base stride and lift at sizeScale = 1; both scaled by size and walkBlend.
+      strideLengthBase: 0.26,
+      liftHeightBase: 0.14,
+    };
+
+    // Base height of the root bone above ground (populated from rest pose).
+    this.baseHeight = 2.1; // Fallback; will be overridden by calibration
   }
+
+  // ------------------------------------------------------
+  // CONFIGURATION
+  // ------------------------------------------------------
 
   setEnvironment(env) {
     this.environment = env || null;
-    if (!env) return;
 
-    if (typeof env.groundHeight === 'number') {
-      this.groundHeight = env.groundHeight;
-      this._groundCalibrated = false;
+    if (env) {
+      if (env.enclosureCenter) this.enclosureCenter.copy(env.enclosureCenter);
+      if (typeof env.enclosureRadius === 'number') this.enclosureRadius = env.enclosureRadius;
+
+      if (env.pondCenter) this.pondCenter.copy(env.pondCenter);
+      if (typeof env.pondRadius === 'number') this.pondRadius = env.pondRadius;
+
+      if (typeof env.sizeScale === 'number') this.sizeScale = env.sizeScale;
     }
-
-    if (env.enclosureCenter) this.enclosureCenter.copy(env.enclosureCenter);
-    if (typeof env.enclosureRadius === 'number') this.enclosureRadius = env.enclosureRadius;
-    if (env.pondCenter) this.pondCenter.copy(env.pondCenter);
-    if (typeof env.pondRadius === 'number') this.pondRadius = env.pondRadius;
-
-    this.sizeScale = Math.max(0.25, this.enclosureRadius / 10);
-    this.obstaclePadding = 0.6 * this.sizeScale;
-    this.lookAheadDistance = 2.3 * this.sizeScale;
-    this.drinkApproachDistance = 0.8 * this.sizeScale;
-
-    this._initializedIK = false;
   }
 
-  // ------------------------------------------------------
-  // IK SETUP & HELPERS
-  // ------------------------------------------------------
-
+  // Called by ElephantBehavior when the rest pose is set up.
   _initializeFromRestPose() {
-    if (!this.elephant || !this.elephant.bones || !this.elephant.mesh) return;
-    if (this._initializedIK && this._groundCalibrated) return;
+    const elephant = this.elephant;
+    if (!elephant || !elephant.bones) return;
 
-    const bones = this.elephant.bones;
-    const mesh = this.elephant.mesh;
+    const bones = elephant.bones;
     const root = bones['spine_base'];
     if (!root) return;
 
-    if (this._rootInitialY === null) {
-      this._rootInitialY = root.position.y;
-    }
-
+    // Initialize base height from rest pose relative to ground.
+    this._calibrateGround(root);
     this._initLegChains();
+    this._initializedIK = true;
+    this._groundCalibrated = true;
+  }
+
+  _calibrateGround(root) {
+    const mesh = this.elephant.mesh;
+    if (!mesh) return;
+
     mesh.updateMatrixWorld(true);
 
     const bbox = new THREE.Box3().setFromObject(mesh);
     const minY = bbox.min.y;
 
-    if (Number.isFinite(minY)) {
-      const offsetFromRoot = this._rootInitialY - minY;
-      this.baseHeight = this.groundHeight + offsetFromRoot;
-      root.position.y = this.baseHeight;
-    }
+    // Assume groundHeight (world) is at 0 for the ElephantPen.
+    this.groundHeight = 0;
 
-    this._initializedIK = true;
-    this._groundCalibrated = true;
+    // Root initial Y is chosen so that the lowest point of the Elephant sits on ground.
+    const worldRootY = root.getWorldPosition(new THREE.Vector3()).y;
+    const deltaMeshToRoot = worldRootY - minY;
+
+    this._rootInitialY = this.groundHeight + deltaMeshToRoot;
+    root.position.y = this._rootInitialY;
+    this.baseHeight = root.position.y;
   }
 
   _initLegChains() {
@@ -184,53 +204,61 @@ export class ElephantLocomotion {
     } else {
       Object.values(bones).forEach((b) => b.updateMatrixWorld(true));
     }
+
     mesh.updateMatrixWorld(true);
 
-    for (const def of legDefs) {
+    legDefs.forEach((def) => {
       const upper = bones[def.upper];
       const lower = bones[def.lower];
       const foot  = bones[def.foot];
-      if (!upper || !lower || !foot) continue;
+      if (!upper || !lower || !foot) return;
 
       upper.getWorldPosition(hipWorld);
       lower.getWorldPosition(kneeWorld);
       foot.getWorldPosition(ankleWorld);
 
       const len1 = hipWorld.distanceTo(kneeWorld);
-      const len2 = Math.max(kneeWorld.distanceTo(ankleWorld), 0.0001);
+      const len2 = kneeWorld.distanceTo(ankleWorld);
 
-      invUpper.copy(upper.matrixWorld).invert();
+      invUpper.copy(upper.parent.matrixWorld).invert();
       footLocal.copy(ankleWorld).applyMatrix4(invUpper);
 
-      const restDistance = Math.sqrt(footLocal.y * footLocal.y + footLocal.z * footLocal.z);
+      const restUpperRotX = upper.rotation.x;
+      const restLowerRotX = lower.rotation.x;
+      const restFootRotX  = foot.rotation.x;
 
       legs[def.key] = {
-        ...def,
+        key: def.key,
+        isFront: def.isFront,
         upper,
         lower,
         foot,
-        len1: Math.max(len1, 0.001),
-        len2: Math.max(len2, 0.001),
+        len1,
+        len2,
         restFootLocal: footLocal.clone(),
-        restUpperRotX: upper.rotation.x,
-        restLowerRotX: lower.rotation.x,
-        restFootRotX: foot.rotation.x
+        restUpperRotX,
+        restLowerRotX,
+        restFootRotX
       };
-    }
+    });
 
     this.legs = legs;
   }
 
-  _solveLegIKFromLocalTarget(leg, targetLocal) {
-    if (!leg || !leg.upper || !leg.lower || !leg.foot || !leg.restFootLocal) return;
+  // ------------------------------------------------------
+  // IK SOLVER
+  // ------------------------------------------------------
 
-    const len1 = leg.len1;
-    const len2 = leg.len2;
+  _solveLegIKFromLocalTarget(leg, targetLocal) {
+    if (!leg) return;
     const upper = leg.upper;
     const lower = leg.lower;
-    const foot = leg.foot;
+    const foot  = leg.foot;
+    if (!upper || !lower || !foot) return;
 
-    // 2D IK Plane: Y is down/up, Z is forward/back
+    const base = leg.restFootLocal;
+    if (!base) return;
+
     const y = targetLocal.y;
     const z = targetLocal.z;
 
@@ -239,9 +267,11 @@ export class ElephantLocomotion {
 
     const dSq = u * u + v * v;
     let d = Math.sqrt(dSq);
-    const maxReach = len1 + len2 * 0.999;
+    const maxReach = leg.len1 + leg.len2 * 0.999;
     d = Math.min(Math.max(d, 0.0001), maxReach);
 
+    const len1 = leg.len1;
+    const len2 = leg.len2;
     const cosK = (len1 * len1 + len2 * len2 - d * d) / (2 * len1 * len2);
     const kneeInternal = Math.acos(THREE.MathUtils.clamp(cosK, -1, 1));
 
@@ -286,7 +316,11 @@ export class ElephantLocomotion {
   }
 
   /**
-   * Helper: Natural Quadruped walking pose.
+   * Poses a leg in a walking cycle with stance/swing phases.
+   * phase: 0..1
+   * stepLength: approximate step length in local Z
+   * liftHeight: how high the hoof lifts in swing phase.
+   *
    * Splits cycle into STANCE (foot on ground moving back) and SWING (foot in air moving forward).
    */
   _poseLegWalk(legKey, phase, stepLength, liftHeight) {
@@ -303,16 +337,16 @@ export class ElephantLocomotion {
     if (u < 0) u += 1;
 
     // Gait Definition:
-    // Swing Phase: ~35% of cycle (fast forward movement through air)
-    // Stance Phase: ~65% of cycle (slow backward movement on ground)
-    const swingDuration = 0.35; 
+    // Swing Phase: ~30% of cycle (fast forward movement through air)
+    // Stance Phase: ~70% of cycle (slow backward movement on ground)
+    const swingDuration = THREE.MathUtils.clamp(this.gait.swingDuration, 0.2, 0.4);
     const stanceDuration = 1.0 - swingDuration;
 
     if (u < swingDuration) {
       // --- SWING PHASE ---
       // Normalize u to 0..1 within the swing window
       const swingT = u / swingDuration;
-      
+
       // Horizontal Motion: Move from -step (back) to +step (front)
       // We use a cosine interpolation for smooth acceleration/deceleration
       const zProgress = (1 - Math.cos(swingT * Math.PI)) * 0.5; // 0 to 1
@@ -332,10 +366,55 @@ export class ElephantLocomotion {
       target.z = base.z + stepLength - (stanceT * (stepLength * 2));
 
       // Vertical Motion: Flat on ground
-      target.y = base.y; 
+      target.y = base.y;
     }
 
     this._solveLegIKFromLocalTarget(leg, target);
+  }
+
+  // Stride & speed helpers so translational speed matches the leg cycle.
+  _getStrideLength() {
+    const base = (this.gait && typeof this.gait.strideLengthBase === 'number')
+      ? this.gait.strideLengthBase
+      : 0.26;
+    return base * this.sizeScale;
+  }
+
+  _getGaitSpeed(blend = this.walkBlend) {
+    // Ensure legs and body translation stay in sync so feet do not "moonwalk".
+    // We treat _getStrideLength() as the per-leg step length (distance from
+    // neutral to maximum forward placement in root space) and solve for the
+    // body speed that keeps stance-phase feet roughly planted in world space.
+    //
+    // During stance, a foot moves from +stepLength to -stepLength in root
+    // space while the body moves forward. To keep the foot stationary in
+    // world space, the body must travel 2 * stepLength over the stance
+    // portion of the cycle. If the gait frequency is F cycles/second and
+    // stanceDuration is S (0..1 of the cycle), then:
+    //
+    //   speed ≈ (2 * stepLength / S) * F
+    //
+    // Using the same "blend" both for step amplitude and for speed keeps the
+    // legs and root motion tightly matched across slow/fast walks.
+    const b = THREE.MathUtils.clamp(blend, 0, 1);
+    const stepLength = this._getStrideLength() * b;
+    const freq = this._gaitFrequency;
+    const swing = THREE.MathUtils.clamp(
+      this.gait && typeof this.gait.swingDuration === 'number' ? this.gait.swingDuration : 0.3,
+      0.05,
+      0.9
+    );
+    const stance = 1.0 - swing;
+    if (stance <= 0.0001 || freq <= 0 || stepLength <= 0) return 0;
+    return (2 * stepLength * freq) / stance;
+  }
+
+  _getLegPhase(legKey, globalPhase) {
+    const offsets = (this.gait && this.gait.phaseOffsets) ? this.gait.phaseOffsets : {};
+    const offset = (legKey in offsets) ? offsets[legKey] : 0.0;
+    let u = (globalPhase + offset) % 1;
+    if (u < 0) u += 1;
+    return u;
   }
 
   // ------------------------------------------------------
@@ -373,7 +452,9 @@ export class ElephantLocomotion {
     this.curiousBlend = THREE.MathUtils.damp(this.curiousBlend, curiousTarget, 2.0, dt);
 
     // Gait frequency
-    this._gaitFrequency = this.walkSpeed * 0.8;
+    // Keep gait frequency anchored to walkSpeed; we can later
+    // modulate this if we add true speed controls.
+    this._gaitFrequency = this.walkSpeed;
     if (this.walkBlend > 0.001) {
       this.gaitPhase = (this.gaitPhase + dt * this._gaitFrequency) % 1.0;
     }
@@ -440,63 +521,55 @@ export class ElephantLocomotion {
     }
   }
 
-  maybeTriggerExcitement(dt = 0) {
-    const timeSinceExcited = this._time - this.lastExcitedTime;
-    if (timeSinceExcited < this.excitedCooldown) return;
-    const perFrameChance = (this.excitedChance / this.excitedCooldown) * Math.max(dt, 0.016);
-    if (Math.random() < perFrameChance) {
+  maybeTriggerExcitement(dt) {
+    if (!this.environment) return;
+    const timeSince = this._time - this.lastExcitedTime;
+    if (timeSince < this.excitedCooldown) return;
+
+    if (Math.random() < this.excitedChance * dt) {
       this.setState('excited');
     }
   }
 
-  computeAvoidance(position, includeWater = true) {
-    const steering = new THREE.Vector3();
-    if (!this.environment) return steering;
+  // ------------------------------------------------------
+  // PATHING & BOUNDS
+  // ------------------------------------------------------
 
-    const softBoundary = this.enclosureRadius * this.boundarySoftRadius;
-    const offset = this.tempVec.copy(position).sub(this.enclosureCenter);
-    offset.y = 0;
-    const distanceFromCenter = offset.length();
-    if (distanceFromCenter > softBoundary) {
-      const pull = offset.clone().multiplyScalar(-1).normalize();
-      const strength = Math.min(1, (distanceFromCenter - softBoundary) / Math.max(softBoundary, 0.0001));
-      steering.add(pull.multiplyScalar(strength * 0.9));
+  turnToward(desired, dt, turnRate = 2.0) {
+    if (!desired || desired.lengthSq() < 0.0001) return;
+
+    const desiredDir = desired.clone();
+    desiredDir.y = 0;
+    if (desiredDir.lengthSq() < 0.0001) return;
+    desiredDir.normalize();
+
+    const currentDir = this.direction.clone();
+    currentDir.y = 0;
+    if (currentDir.lengthSq() < 0.0001) {
+      this.direction.copy(desiredDir);
+      return;
     }
+    currentDir.normalize();
 
-    const obstacles = this.environment.obstacles || [];
-    obstacles.forEach((obs) => {
-      if (obs.type === 'water' && (!includeWater || this.state === 'drink')) return;
+    const currentYaw = Math.atan2(currentDir.x, currentDir.z);
+    const targetYaw = Math.atan2(desiredDir.x, desiredDir.z);
+    let delta = targetYaw - currentYaw;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
 
-      const obsPos = obs.position || this.tempVec2.set(0, 0, 0);
-      const toObstacle = this.tempVec2.copy(position).sub(obsPos);
-      toObstacle.y = 0;
-      const distance = toObstacle.length();
-      const radius = (obs.radius || 0.6) + this.obstaclePadding;
+    const maxTurn = Math.max(0.0001, turnRate * dt);
+    delta = THREE.MathUtils.clamp(delta, -maxTurn, maxTurn);
 
-      const future = this.tempVec.copy(position)
-        .add(this.direction.clone().setY(0).normalize().multiplyScalar(this.lookAheadDistance));
-      const futureDistance = future.sub(obsPos).setY(0).length();
-      const effectiveDist = Math.min(distance, futureDistance);
-
-      if (effectiveDist < radius) {
-        const strength = (1 - (effectiveDist / radius)) * (obs.weight || 1);
-        const away = toObstacle.lengthSq() < 0.0001 ? this.direction.clone().negate() : toObstacle.normalize();
-        steering.add(away.multiplyScalar(strength));
-      }
-    });
-
-    return steering;
+    const newYaw = currentYaw + delta;
+    this.direction.set(Math.sin(newYaw), 0, Math.cos(newYaw));
   }
 
-  /**
-   * Move the root forward in local +Z space.
-   * Calculates the specific forward vector from the root's current world rotation
-   * to ensure strict relative movement.
-   */
   moveForward(root, speed, dt, maxDistance = null) {
+    if (!root || speed <= 0 || dt <= 0) return;
+
     const step = speed * dt;
     const clampedStep = maxDistance !== null ? Math.min(step, maxDistance) : step;
-    
+
     // Calculate the strictly relative Forward vector (Local +Z)
     // We use the root's quaternion so movement exactly matches rotation
     const relativeForward = new THREE.Vector3(0, 0, 1).applyQuaternion(root.quaternion);
@@ -529,32 +602,95 @@ export class ElephantLocomotion {
     this.direction.normalize();
   }
 
-  turnToward(targetDir, dt, turnRate = 3.0) {
-    if (!targetDir) return;
+  computeAvoidance(position, includeWater = true) {
+    const steering = new THREE.Vector3();
+    if (!this.environment) return steering;
 
-    const desired = targetDir.clone();
-    desired.y = 0;
-    if (desired.lengthSq() < 0.0001) return;
+    const softBoundary = this.enclosureRadius * this.boundarySoftRadius;
+    const offset = this.tempVec.copy(position).sub(this.enclosureCenter);
+    offset.y = 0;
+    const distanceFromCenter = offset.length();
+    if (distanceFromCenter > softBoundary) {
+      const pull = offset.clone().multiplyScalar(-1).normalize();
+      const strength = Math.min(1, (distanceFromCenter - softBoundary) / Math.max(softBoundary, 0.0001));
+      steering.add(pull.multiplyScalar(strength * 0.9));
+    }
 
-    desired.normalize();
-    this.ensureDirectionNormalized();
+    const obstacles = this.environment.obstacles || [];
+    obstacles.forEach((obs) => {
+      if (obs.type === 'water' && (!includeWater || this.state === 'drink')) return;
 
-    const currentYaw = Math.atan2(this.direction.x, this.direction.z);
-    const targetYaw = Math.atan2(desired.x, desired.z);
-    let delta = targetYaw - currentYaw;
-    while (delta > Math.PI) delta -= Math.PI * 2;
-    while (delta < -Math.PI) delta += Math.PI * 2;
+      const obsPos = obs.position || this.tempVec2.set(0, 0, 0);
+      const toObstacle = this.tempVec2.copy(position).sub(obsPos);
+      toObstacle.y = 0;
+      const distance = toObstacle.length();
+      const radius = (obs.radius || 0.6) + this.obstaclePadding;
 
-    const maxTurn = Math.max(0.0001, turnRate * dt);
-    delta = THREE.MathUtils.clamp(delta, -maxTurn, maxTurn);
+      const future = this.tempVec.copy(position)
+        .add(this.direction.clone().setY(0).normalize().multiplyScalar(this.lookAheadDistance));
+      const futureDistance = future.sub(obsPos).setY(0).length();
+      const effectiveDist = Math.min(distance, futureDistance);
 
-    const newYaw = currentYaw + delta;
-    this.direction.set(Math.sin(newYaw), 0, Math.cos(newYaw));
+      if (effectiveDist < radius) {
+        const push = toObstacle.normalize().multiplyScalar((radius - effectiveDist) / radius);
+        steering.add(push);
+      }
+    });
+
+    return steering;
   }
 
-  // -----------------------------
-  // STATES
-  // -----------------------------
+  // ------------------------------------------------------
+  // STATE UPDATES
+  // ------------------------------------------------------
+
+  updateIdle(dt, root, bones) {
+    this._idleTime += dt;
+
+    root.position.y = this.baseHeight + Math.sin(this._idleTime * 0.6) * 0.03;
+    root.rotation.x = Math.sin(this._idleTime * 0.4) * 0.02;
+    root.rotation.z = Math.sin(this._idleTime * 0.5 + 0.7) * 0.02;
+
+    const t = this._idleTime;
+    if (this.legs.BL) this._poseLegIdle('BL', t, 0.03, 0.02);
+    if (this.legs.FL) this._poseLegIdle('FL', t, 0.03, 0.02);
+    if (this.legs.BR) this._poseLegIdle('BR', t, 0.03, 0.02);
+    if (this.legs.FR) this._poseLegIdle('FR', t, 0.03, 0.02);
+
+    const trunkBase = bones['trunk_base'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
+    const trunkTip  = bones['trunk_tip'];
+
+    const sway = Math.sin(t * 0.6) * 0.12;
+    const dip  = Math.sin(t * 0.5 + 0.5) * 0.08;
+
+    if (trunkBase) {
+      trunkBase.rotation.y = sway * 0.4;
+      trunkBase.rotation.x = dip * 0.3;
+    }
+    if (trunkMid1) {
+      trunkMid1.rotation.y = sway * 0.7;
+      trunkMid1.rotation.x = dip * 0.5;
+    }
+    if (trunkMid2) {
+      trunkMid2.rotation.y = sway * 0.9;
+      trunkMid2.rotation.x = dip * 0.7;
+    }
+    if (trunkTip) {
+      trunkTip.rotation.y = sway * 1.0;
+      trunkTip.rotation.x = dip * 0.9;
+    }
+
+    const earLeft  = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    if (earLeft) {
+      earLeft.rotation.y = Math.sin(t * 0.8) * 0.15;
+    }
+    if (earRight) {
+      earRight.rotation.y = -Math.sin(t * 0.8 + 0.2) * 0.15;
+    }
+  }
 
   updateWander(dt, root, mesh, bones) {
     const drift = this.tempVec2.set(
@@ -564,8 +700,10 @@ export class ElephantLocomotion {
     );
 
     const avoidance = this.computeAvoidance(root.position, true);
+
+    // Blend current heading, random drift, and avoidance
     const desiredDirection = this.direction.clone()
-      .add(drift.multiplyScalar(0.3))
+      .add(drift.multiplyScalar(0.25))
       .add(avoidance);
 
     this.turnToward(desiredDirection, dt, 2.6);
@@ -574,17 +712,19 @@ export class ElephantLocomotion {
     const yaw = Math.atan2(this.direction.x, this.direction.z);
     root.rotation.y = THREE.MathUtils.damp(root.rotation.y, yaw, 6.0, dt);
 
-    const forwardSpeed = this.walkSpeed * 0.7;
+    // Use gait-based speed so feet and translation stay in sync.
+    // We pass the same blend used for leg amplitude so stance feet stay planted.
+    const forwardSpeed = this._getGaitSpeed(this.walkBlend);
     this.moveForward(root, forwardSpeed, dt);
     this.keepWithinBounds(root);
 
     // Body bobbing (2 ups per gait cycle)
     const time = this._idleTime * 1.4;
-    const bob = Math.sin((time + this.gaitPhase * Math.PI * 2) * 2.0) * 0.05;
+    const bob = Math.sin((time + this.gaitPhase * Math.PI * 2) * 2.0) * 0.05 * this.walkBlend;
     root.position.y = this.baseHeight + bob;
 
-    const leanForward = Math.sin(this.gaitPhase * Math.PI * 2) * 0.05;
-    const leanSide = Math.sin(this.gaitPhase * Math.PI * 4) * 0.03;
+    const leanForward = Math.sin(this.gaitPhase * Math.PI * 2) * 0.05 * this.walkBlend;
+    const leanSide = Math.sin(this.gaitPhase * Math.PI * 4) * 0.03 * this.walkBlend;
     root.rotation.x = leanForward;
     root.rotation.z = leanSide;
 
@@ -594,13 +734,13 @@ export class ElephantLocomotion {
   }
 
   updateDrink(dt, root, mesh, bones) {
-    const approach = this.tempVec.copy(this.pondCenter).sub(root.position);
-    approach.y = 0;
-    const distance = approach.length();
-    if (distance > 0.0001) {
-      approach.normalize();
-    }
+    const t = this._stateTime;
 
+    const toWater = this.tempVec.copy(this.pondCenter).sub(root.position);
+    toWater.y = 0;
+    const distance = toWater.length();
+
+    const approach = toWater.clone().normalize();
     const avoidance = this.computeAvoidance(root.position, false);
     const desiredDir = approach.clone().add(avoidance.multiplyScalar(0.8));
     this.turnToward(desiredDir, dt, 3.3);
@@ -616,14 +756,16 @@ export class ElephantLocomotion {
         dt
       );
 
-      const speed = this.walkSpeed * 0.55;
+      // Match leg cycle and translation while approaching. We use the
+      // same blend for speed and leg amplitude to keep feet grounded.
+      const speed = this._getGaitSpeed(this.walkBlend);
       const remaining = Math.max(0, distance - targetDist);
       this.moveForward(root, speed, dt, remaining);
       this.keepWithinBounds(root);
 
-      const bob = Math.sin((this._idleTime + this.gaitPhase * Math.PI * 2) * 2.0) * 0.04;
+      const bob = Math.sin((this._idleTime + this.gaitPhase * Math.PI * 2) * 2.0) * 0.04 * this.walkBlend;
       root.position.y = this.baseHeight + bob;
-      root.rotation.x = -0.05;
+      root.rotation.x = -0.05 * this.walkBlend;
 
       this.applyLegWalk(bones, this.gaitPhase);
       this.applyTrunkWalk(bones, this._idleTime, this.gaitPhase * 0.5);
@@ -638,28 +780,30 @@ export class ElephantLocomotion {
     const trunkBase = bones['trunk_base'];
     const trunkMid1 = bones['trunk_mid1'];
     const trunkMid2 = bones['trunk_mid2'];
-    const trunkTip = bones['trunk_tip'];
-    const earLeft = bones['ear_left'];
-    const earRight = bones['ear_right'];
+    const trunkTip  = bones['trunk_tip'];
 
-    root.position.y = this.baseHeight - 0.08 * settle;
-    root.rotation.x = -0.2 * settle;
+    root.position.y = THREE.MathUtils.damp(root.position.y, this.groundHeight + 1.9 * this.sizeScale, 4.0, dt);
+    root.rotation.x = THREE.MathUtils.damp(root.rotation.x, -0.35, 4.0, dt);
 
-    this.applyLegIdle(bones, this._idleTime * 0.5);
-
-    if (neck) neck.rotation.x = -0.45 * settle;
-    if (head) head.rotation.x = -0.25 * settle;
-
-    const trunkDip = -0.8 * settle;
-    if (trunkBase) trunkBase.rotation.x = trunkDip * 0.3;
-    if (trunkMid1) trunkMid1.rotation.x = trunkDip * 0.6;
-    if (trunkMid2) trunkMid2.rotation.x = trunkDip * 0.9;
-    if (trunkTip) {
-      trunkTip.rotation.x = trunkDip * 1.2;
-      trunkTip.rotation.y = Math.sin(this._stateTime * 1.8) * 0.05;
+    if (neck) {
+      neck.rotation.x = THREE.MathUtils.damp(neck.rotation.x, -0.4, 4.0, dt) * settle;
+    }
+    if (head) {
+      head.rotation.x = THREE.MathUtils.damp(head.rotation.x, -0.35, 4.0, dt) * settle;
     }
 
-    const flare = 0.18 * settle;
+    const trunkDown = -0.9;
+    if (trunkBase) trunkBase.rotation.x = THREE.MathUtils.damp(trunkBase.rotation.x, trunkDown * 0.35, 4.0, dt);
+    if (trunkMid1) trunkMid1.rotation.x = THREE.MathUtils.damp(trunkMid1.rotation.x, trunkDown * 0.6, 4.0, dt);
+    if (trunkMid2) trunkMid2.rotation.x = THREE.MathUtils.damp(trunkMid2.rotation.x, trunkDown * 0.85, 4.0, dt);
+    if (trunkTip)  trunkTip.rotation.x  = THREE.MathUtils.damp(trunkTip.rotation.x,  trunkDown * 1.1, 4.0, dt);
+
+    if (head) head.rotation.y = Math.sin(t * 0.8) * 0.06;
+    if (trunkTip) trunkTip.rotation.y = Math.sin(t * 0.9) * 0.12;
+
+    const earLeft  = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    const flare = Math.sin(t * 0.6) * 0.15;
     if (earLeft) earLeft.rotation.y = flare;
     if (earRight) earRight.rotation.y = -flare;
 
@@ -675,39 +819,41 @@ export class ElephantLocomotion {
     root.rotation.x = Math.sin(t * 4.0) * 0.1;
     root.rotation.z = Math.sin(t * 5.0) * 0.08;
 
-    const head = bones['head'];
-    const neck = bones['spine_neck'];
+    if (this.legs.BL) this._poseLegIdle('BL', t * 1.8, 0.07, 0.05);
+    if (this.legs.FL) this._poseLegIdle('FL', t * 2.0, 0.08, 0.05);
+    if (this.legs.BR) this._poseLegIdle('BR', t * 1.8, 0.07, 0.05);
+    if (this.legs.FR) this._poseLegIdle('FR', t * 2.0, 0.08, 0.05);
+
     const trunkBase = bones['trunk_base'];
     const trunkMid1 = bones['trunk_mid1'];
     const trunkMid2 = bones['trunk_mid2'];
-    const trunkTip = bones['trunk_tip'];
-    const earLeft = bones['ear_left'];
-    const earRight = bones['ear_right'];
+    const trunkTip  = bones['trunk_tip'];
 
-    if (neck) neck.rotation.x = -0.25;
-    if (head) {
-      head.rotation.x = -0.2;
-      head.rotation.y = Math.sin(t * 3.0) * 0.25;
+    const sway = Math.sin(t * 4.0) * 0.35;
+    const dip  = Math.sin(t * 3.0) * 0.25;
+
+    if (trunkBase) {
+      trunkBase.rotation.y = sway * 0.5;
+      trunkBase.rotation.x = dip * 0.3;
     }
-
-    const wave = Math.sin(t * 5.5) * 0.5;
-    const lift = -0.9;
-    if (trunkBase) trunkBase.rotation.x = lift * 0.25;
-    if (trunkMid1) trunkMid1.rotation.x = lift * 0.5;
+    if (trunkMid1) {
+      trunkMid1.rotation.y = sway * 0.7;
+      trunkMid1.rotation.x = dip * 0.5;
+    }
     if (trunkMid2) {
-      trunkMid2.rotation.x = lift * 0.8;
-      trunkMid2.rotation.y = wave * 0.4;
+      trunkMid2.rotation.y = sway * 0.9;
+      trunkMid2.rotation.x = dip * 0.7;
     }
     if (trunkTip) {
-      trunkTip.rotation.x = lift * 1.0;
-      trunkTip.rotation.y = wave * 0.6;
+      trunkTip.rotation.y = sway * 1.1;
+      trunkTip.rotation.x = dip * 0.9;
     }
 
-    const flare = 0.3 + Math.sin(t * 7.0) * 0.1;
-    if (earLeft) earLeft.rotation.y = flare;
-    if (earRight) earRight.rotation.y = -flare;
-
-    this.applyLegIdle(bones, this._idleTime * 1.8);
+    const earLeft  = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    const flap = Math.sin(t * 10.0) * 0.4;
+    if (earLeft) earLeft.rotation.y = flap;
+    if (earRight) earRight.rotation.y = -flap;
 
     if (this._stateTime > this.excitedDuration) {
       this.setState('wander');
@@ -715,163 +861,31 @@ export class ElephantLocomotion {
   }
 
   updateCurious(dt, root, bones) {
-    const t = this._idleTime;
-    const bob = Math.sin(t * 1.3) * 0.03;
-    root.position.y = this.baseHeight + bob;
+    const t = this._stateTime;
+    root.position.y = this.baseHeight + Math.sin(t * 1.4) * 0.04 * this.curiousBlend;
 
-    const swaySide = Math.sin(t * 0.9) * 0.04;
-    root.rotation.z = swaySide;
-
-    const pitch = Math.sin(t * 0.7) * 0.05;
-    root.rotation.x = pitch;
-
-    const yaw = Math.sin(t * 0.45) * 0.25;
-    const head = bones['head'];
     const neck = bones['spine_neck'];
-    if (neck) neck.rotation.y = yaw * 0.4;
-    if (head) head.rotation.y = yaw * 0.6;
+    const head = bones['head'];
+    const trunkBase = bones['trunk_base'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
+    const trunkTip  = bones['trunk_tip'];
 
-    this.applyTrunkIdle(bones, t);
-    this.applyEarIdle(bones, t);
+    const look = Math.sin(t * 0.7) * 0.3;
+    if (neck) neck.rotation.y = look * 0.4 * this.curiousBlend;
+    if (head) head.rotation.y = look * 0.7 * this.curiousBlend;
 
-    if (neck) neck.rotation.x = Math.sin(t * 0.8) * 0.05;
-    if (head) head.rotation.x = Math.sin(t * 0.8 + 1.0) * 0.08;
+    const coil = Math.sin(t * 0.9) * 0.5 * this.curiousBlend;
+    if (trunkBase) trunkBase.rotation.x = -0.25 + coil * 0.25;
+    if (trunkMid1) trunkMid1.rotation.x = -0.3 + coil * 0.3;
+    if (trunkMid2) trunkMid2.rotation.x = -0.35 + coil * 0.35;
+    if (trunkTip)  trunkTip.rotation.x = -0.4 + coil * 0.4;
 
     const earLeft  = bones['ear_left'];
     const earRight = bones['ear_right'];
-    const flap = 0.15 * Math.sin(this._stateTime * 3.0);
-    if (earLeft)  earLeft.rotation.y = flap;
-    if (earRight) earRight.rotation.y = -flap;
-  }
-
-  applySecondaryMotion(dt, bones) {
-    const TWO_PI = Math.PI * 2;
-    const trunkBase = bones['trunk_base'];
-    const trunkMid1 = bones['trunk_mid1'];
-    const trunkMid2 = bones['trunk_mid2'];
-    const trunkTip = bones['trunk_tip'];
-    const earLeft = bones['ear_left'];
-    const earRight = bones['ear_right'];
-    const tailBase = bones['tail_base'];
-    const tailMid = bones['tail_mid'];
-    const tailTip = bones['tail_tip'];
-
-    const forwardVel = this.walkBlend * this.walkSpeed;
-    const turning = Math.sin(this.gaitPhase * TWO_PI * 0.7) * this.walkBlend;
-
-    const stiffness = 10.0;
-    const damping = 3.2;
-
-    const trunkTarget = forwardVel * 0.55 + turning * 0.35;
-    const earsTarget = forwardVel * 0.65 + turning * 0.35;
-    const tailTarget = forwardVel * -0.75 + turning * 0.4;
-
-    {
-      const s = this._spring.trunk;
-      const acc = (trunkTarget - s.angle) * stiffness - s.velocity * damping;
-      s.velocity += acc * dt;
-      s.angle = THREE.MathUtils.clamp(s.angle + s.velocity * dt, -0.35, 0.35);
-
-      if (trunkBase) trunkBase.rotation.x += s.angle * 0.12;
-      if (trunkMid1) trunkMid1.rotation.x += s.angle * 0.45;
-      if (trunkMid2) trunkMid2.rotation.x += s.angle * 0.75;
-      if (trunkTip) trunkTip.rotation.x += s.angle * 1.0;
-    }
-
-    {
-      const s = this._spring.ears;
-      const acc = (earsTarget - s.angle) * stiffness - s.velocity * damping;
-      s.velocity += acc * dt;
-      s.angle = THREE.MathUtils.clamp(s.angle + s.velocity * dt, -0.28, 0.28);
-      
-      const earLeft = bones['ear_left'];
-      const earRight = bones['ear_right'];
-      if (earLeft) earLeft.rotation.y += s.angle;
-      if (earRight) earRight.rotation.y -= s.angle;
-    }
-
-    {
-      const s = this._spring.tail;
-      const acc = (tailTarget - s.angle) * stiffness - s.velocity * damping;
-      s.velocity += acc * dt;
-      s.angle = THREE.MathUtils.clamp(s.angle + s.velocity * dt, -0.32, 0.32);
-
-      if (tailBase) tailBase.rotation.y += s.angle * 0.6;
-      if (tailMid) tailMid.rotation.y += s.angle * 0.8;
-      if (tailTip) tailTip.rotation.y += s.angle * 1.0;
-    }
-  }
-
-  updateIdle(dt, root, bones) {
-    const t = this._idleTime;
-
-    const bob = Math.sin(t * 1.2) * 0.03;
-    root.position.y = this.baseHeight + bob;
-
-    const sway = Math.sin(t * 0.7) * 0.02;
-    root.rotation.z = sway;
-
-    const pitch = Math.sin(t * 0.5) * 0.03;
-    root.rotation.x = pitch;
-
-    this.applyLegIdle(bones, t);
-    this.applyTrunkIdle(bones, t);
-    this.applyEarIdle(bones, t);
-  }
-
-  applyLegIdle(bones, t) {
-    if (!this.legs || Object.keys(this.legs).length === 0) return;
-
-    const baseRadius = 0.04 * this.sizeScale;
-    const baseLift   = 0.02 * this.sizeScale;
-
-    this._poseLegIdle('FL', t,          baseRadius * 1.0,  baseLift * 1.0);
-    this._poseLegIdle('FR', t + 0.6,    baseRadius * 0.9,  baseLift * 0.9);
-    this._poseLegIdle('BL', t + 0.3,    baseRadius * 1.05, baseLift * 1.05);
-    this._poseLegIdle('BR', t + 0.9,    baseRadius * 0.95, baseLift * 0.95);
-  }
-
-  applyTrunkIdle(bones, t) {
-    const trunkBase = bones['trunk_base'];
-    const trunkMid1 = bones['trunk_mid1'];
-    const trunkMid2 = bones['trunk_mid2'];
-    const trunkTip = bones['trunk_tip'];
-
-    const sway = Math.sin(t * 0.8) * 0.2;
-    const dip  = Math.sin(t * 0.6) * 0.15;
-
-    if (trunkBase) {
-      trunkBase.rotation.y = sway * 0.35;
-      trunkBase.rotation.x = dip * 0.45;
-    }
-    if (trunkMid1) {
-      trunkMid1.rotation.y = sway * 0.6;
-      trunkMid1.rotation.x = dip * 0.65;
-    }
-    if (trunkMid2) {
-      trunkMid2.rotation.y = sway * 0.8;
-      trunkMid2.rotation.x = dip * 0.85;
-    }
-    if (trunkTip) {
-      trunkTip.rotation.y = sway * 1.0;
-      trunkTip.rotation.x = dip * 1.05;
-    }
-  }
-
-  applyEarIdle(bones, t) {
-    const earLeft = bones['ear_left'];
-    const earRight = bones['ear_right'];
-    if (!earLeft && !earRight) return;
-
-    const baseFlap = Math.sin(t * 0.7) * 0.1;
-    const pulse = Math.max(0, Math.sin(t * 0.3)) ** 2; 
-    const strongFlap = pulse * 0.25;
-
-    const totalFlapLeft = baseFlap + strongFlap;
-    const totalFlapRight = baseFlap + strongFlap * 0.9; 
-
-    if (earLeft) earLeft.rotation.y = totalFlapLeft;
-    if (earRight) earRight.rotation.y = -totalFlapRight;
+    const perk = 0.15 + Math.sin(t * 1.5) * 0.12 * this.curiousBlend;
+    if (earLeft) earLeft.rotation.y = perk;
+    if (earRight) earRight.rotation.y = -perk;
   }
 
   // -----------------------------
@@ -895,10 +909,11 @@ export class ElephantLocomotion {
     root.position.x = sway;
 
     // Apply Movement Second (Move relative to new rotation)
-    const strideLength = 0.26 * this.sizeScale;
-    const gaitSpeed = strideLength * this._gaitFrequency * this.walkBlend * 0.95;
+    // Advance root so that stance-phase feet stay approximately planted
+    // in world space for the current gait phase.
+    const gaitSpeed = this._getGaitSpeed(this.walkBlend);
     this.moveForward(root, gaitSpeed, dt);
-    
+
     this.keepWithinBounds(root);
 
     // Lean
@@ -912,30 +927,25 @@ export class ElephantLocomotion {
     this.applyEarWalk(bones, this._idleTime, this.gaitPhase);
   }
 
-  /**
-   * Lateral-Sequence Gait (Heavy Quadruped)
-   * Order: Back Left (0) -> Front Left (0.15) -> Back Right (0.5) -> Front Right (0.65)
-   * This ensures there is always a triangle of support or at least 2 legs grounded.
-   */
   applyLegWalk(bones, phase) {
     if (!this.legs || Object.keys(this.legs).length === 0) return;
 
     // Use modulo 1 to wrap phase cleanly
     const p = phase % 1;
 
-    const baseStride = 0.26 * this.sizeScale * this.walkBlend;
-    const baseLift   = 0.14 * this.sizeScale * this.walkBlend;
+    const baseStride = this._getStrideLength() * this.walkBlend;
+    const baseLift   = this.gait.liftHeightBase * this.sizeScale * this.walkBlend;
 
-    // Lateral Sequence Offsets
-    // BL hits ground at 0.0
-    // FL hits ground shortly after (0.15)
-    // BR hits ground at 0.5
-    // FR hits ground shortly after (0.65)
-    
-    this._poseLegWalk('BL', p + 0.0,  baseStride * 0.95, baseLift * 1.05);
-    this._poseLegWalk('FL', p - 0.15, baseStride * 1.0,  baseLift * 1.0);
-    this._poseLegWalk('BR', p - 0.5,  baseStride * 0.95, baseLift * 1.05);
-    this._poseLegWalk('FR', p - 0.65, baseStride * 1.0,  baseLift * 1.0);
+    // Lateral sequence phase offsets are pulled from this.gait.phaseOffsets
+    const pBL = this._getLegPhase('BL', p);
+    const pFL = this._getLegPhase('FL', p);
+    const pBR = this._getLegPhase('BR', p);
+    const pFR = this._getLegPhase('FR', p);
+
+    this._poseLegWalk('BL', pBL, baseStride * 0.95, baseLift * 1.05);
+    this._poseLegWalk('FL', pFL, baseStride * 1.0,  baseLift * 1.0);
+    this._poseLegWalk('BR', pBR, baseStride * 0.95, baseLift * 1.05);
+    this._poseLegWalk('FR', pFR, baseStride * 1.0,  baseLift * 1.0);
   }
 
   applyTrunkWalk(bones, t, phase) {
@@ -945,23 +955,23 @@ export class ElephantLocomotion {
     const trunkTip = bones['trunk_tip'];
 
     const sway = THREE.MathUtils.clamp(Math.sin(t * 1.0) * 0.32 + Math.sin(phase * Math.PI * 1.4) * 0.22, -0.45, 0.45);
-    const dip  = THREE.MathUtils.clamp(Math.sin(t * 0.85 + 1.0) * 0.24, -0.32, 0.32);
+    const dip  = THREE.MathUtils.clamp(Math.sin(t * 0.8) * 0.24 + Math.sin(phase * Math.PI * 0.9) * 0.18, -0.35, 0.35);
 
     if (trunkBase) {
-      trunkBase.rotation.y = sway * 0.55;
+      trunkBase.rotation.y = sway * 0.45;
       trunkBase.rotation.x = dip * 0.35;
     }
     if (trunkMid1) {
-      trunkMid1.rotation.y = sway * 0.7;
-      trunkMid1.rotation.x = dip * 0.65;
+      trunkMid1.rotation.y = sway * 0.75;
+      trunkMid1.rotation.x = dip * 0.55;
     }
     if (trunkMid2) {
-      trunkMid2.rotation.y = sway * 0.65;
-      trunkMid2.rotation.x = dip * 0.9;
+      trunkMid2.rotation.y = sway * 0.9;
+      trunkMid2.rotation.x = dip * 0.75;
     }
     if (trunkTip) {
-      trunkTip.rotation.y = sway * 0.55;
-      trunkTip.rotation.x = dip * 1.1;
+      trunkTip.rotation.y = sway * 1.05;
+      trunkTip.rotation.x = dip * 0.95;
     }
   }
 
@@ -970,31 +980,109 @@ export class ElephantLocomotion {
     const earRight = bones['ear_right'];
     if (!earLeft && !earRight) return;
 
-    const gaitFlap = Math.sin(phase * 1.2) * 0.14;
-    const idleFlap = Math.sin(t * 0.65) * 0.06;
+    const flap = Math.sin(t * 2.4) * 0.18 + Math.sin(phase * Math.PI * 2.0) * 0.12;
+    const flapClamped = THREE.MathUtils.clamp(flap, -0.4, 0.4);
 
-    const totalLeft = THREE.MathUtils.clamp(gaitFlap + idleFlap, -0.22, 0.22);
-    const totalRight = THREE.MathUtils.clamp(gaitFlap + idleFlap * 0.9, -0.22, 0.22);
-
-    if (earLeft) earLeft.rotation.y = totalLeft;
-    if (earRight) earRight.rotation.y = -totalRight;
+    if (earLeft) earLeft.rotation.y = flapClamped;
+    if (earRight) earRight.rotation.y = -flapClamped * 0.95;
   }
 
-  resetBones() {
-    const bones = this.elephant.bones;
-    const root = bones['spine_base'];
+  applyTrunkIdle(bones, t) {
+    const trunkBase = bones['trunk_base'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
+    const trunkTip  = bones['trunk_tip'];
 
-    if (root) {
-      root.rotation.set(0, root.rotation.y, 0);
-      root.position.set(0, this.baseHeight, 0);
-      root.updateMatrix();
+    const sway = Math.sin(t * 0.7) * 0.18;
+    const dip  = THREE.MathUtils.clamp(Math.sin(t * 0.6 + 0.5) * 0.22, -0.3, 0.3);
+
+    if (trunkBase) {
+      trunkBase.rotation.y = sway * 0.45;
+      trunkBase.rotation.x = dip * 0.3;
+    }
+    if (trunkMid1) {
+      trunkMid1.rotation.y = sway * 0.7;
+      trunkMid1.rotation.x = dip * 0.5;
+    }
+    if (trunkMid2) {
+      trunkMid2.rotation.y = sway * 0.85;
+      trunkMid2.rotation.x = dip * 0.75;
+    }
+    if (trunkTip) {
+      trunkTip.rotation.y = sway * 1.0;
+      trunkTip.rotation.x = dip * 1.05;
+    }
+  }
+
+  applyEarIdle(bones, t) {
+    const earLeft = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    if (!earLeft && !earRight) return;
+
+    const baseFlap = Math.sin(t * 0.7) * 0.1;
+    const pulse = Math.max(0, Math.sin(t * 0.3)) ** 2;
+    const strongFlap = pulse * 0.25;
+
+    const totalFlapLeft = baseFlap + strongFlap;
+    const totalFlapRight = baseFlap + strongFlap * 0.9;
+
+    if (earLeft) earLeft.rotation.y = totalFlapLeft;
+    if (earRight) earRight.rotation.y = -totalFlapRight;
+  }
+
+  applySecondaryMotion(dt, bones) {
+    const TWO_PI = Math.PI * 2;
+    const trunkBase = bones['trunk_base'];
+    const trunkMid1 = bones['trunk_mid1'];
+    const trunkMid2 = bones['trunk_mid2'];
+    const trunkTip = bones['trunk_tip'];
+    const earLeft = bones['ear_left'];
+    const earRight = bones['ear_right'];
+    const tailBase = bones['tail_base'];
+    const tailMid = bones['tail_mid'];
+    const tailTip = bones['tail_tip'];
+
+    const forwardVel = this._getGaitSpeed(this.walkBlend);
+    const turning = Math.sin(this.gaitPhase * TWO_PI * 0.7) * this.walkBlend;
+
+    const stiffness = 10.0;
+    const damping = 3.2;
+
+    const trunkTarget = (forwardVel * 0.55) + (turning * 0.35);
+    const earsTarget = (forwardVel * 0.65) + (turning * 0.35);
+    const tailTarget = (forwardVel * -0.75) + (turning * 0.4);
+
+    {
+      const s = this._spring.trunk;
+      const acc = (trunkTarget - s.angle) * stiffness - s.velocity * damping;
+      s.velocity += acc * dt;
+      s.angle = THREE.MathUtils.clamp(s.angle + s.velocity * dt, -0.35, 0.35);
+
+      if (trunkBase) trunkBase.rotation.x += s.angle * 0.12;
+      if (trunkMid1) trunkMid1.rotation.x += s.angle * 0.45;
+      if (trunkMid2) trunkMid2.rotation.x += s.angle * 0.75;
+      if (trunkTip)  trunkTip.rotation.x  += s.angle * 0.95;
     }
 
-    Object.keys(bones).forEach(key => {
-      if (key === 'spine_base') return;
-      const b = bones[key];
-      if (!b) return;
-      b.rotation.set(0, 0, 0);
-    });
+    {
+      const s = this._spring.ears;
+      const acc = (earsTarget - s.angle) * stiffness - s.velocity * damping;
+      s.velocity += acc * dt;
+      s.angle = THREE.MathUtils.clamp(s.angle + s.velocity * dt, -0.4, 0.4);
+
+      if (earLeft)  earLeft.rotation.y  += s.angle;
+      if (earRight) earRight.rotation.y -= s.angle * 0.9;
+    }
+
+    {
+      const s = this._spring.tail;
+      const acc = (tailTarget - s.angle) * stiffness - s.velocity * damping;
+      s.velocity += acc * dt;
+      s.angle = THREE.MathUtils.clamp(s.angle + s.velocity * dt, -0.35, 0.35);
+
+      if (tailBase) tailBase.rotation.y += s.angle * 0.4;
+      if (tailMid)  tailMid.rotation.y  += s.angle * 0.7;
+      if (tailTip)  tailTip.rotation.y  += s.angle * 0.9;
+    }
   }
 }
