@@ -66,6 +66,7 @@ export class GiraffeGenerator {
     const lowPoly = options.lowPoly === true;
     const lowPolySides = options.sides || (lowPoly ? 10 : 18);
     const ringsPerSegment = Math.max(1, options.ringsPerSegment || 2);
+    const neckRingsPerSegment = Math.max(3, options.neckRingsPerSegment || ringsPerSegment);
 
     // === 1. Torso ===
     const torsoGeometry = ensureSkinnedGeometry(
@@ -82,17 +83,19 @@ export class GiraffeGenerator {
     // === 2. Neck ===
     const neckGeometry = ensureSkinnedGeometry(
       generateNeckGeometry(skeleton, {
-        bones: ['neck_0', 'neck_1', 'neck_2', 'neck_3', 'neck_4', 'neck_5'],
+        bones: ['neck_0', 'neck_1', 'neck_2', 'neck_3', 'neck_4', 'neck_5', 'neck_6'],
         headBone: 'head',
-        neckTipBone: 'neck_5',
+        neckTipBone: 'neck_6',
         sides: lowPolySides,
+        ringsPerSegment: neckRingsPerSegment,
         radii: [
+          0.44 * neckScale,
+          0.4 * neckScale,
           0.36 * neckScale,
-          0.33 * neckScale,
+          0.32 * neckScale,
           0.28 * neckScale,
           0.24 * neckScale,
-          0.2 * neckScale,
-          0.18 * neckScale
+          0.2 * neckScale
         ],
         capBase: true
       }),
@@ -100,7 +103,7 @@ export class GiraffeGenerator {
     );
 
     // === 3. Head ===
-    const neckTip = samplePosition('neck_5');
+    const neckTip = samplePosition('neck_6');
     const headPos = samplePosition('head');
     const headDir = headPos && neckTip ? headPos.clone().sub(neckTip) : new THREE.Vector3(0, 0, 1);
     if (headDir.lengthSq() < 1e-6) headDir.set(0, 0, 1);

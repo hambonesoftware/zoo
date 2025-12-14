@@ -70,7 +70,7 @@ function buildDefinitionForSkeleton(tuning) {
   const neckScale = getNumber(tuning['skeleton.neckLenScale'], 1);
   const legScale = getNumber(tuning['skeleton.legLenScale'], 1);
 
-  applyScaleToBones(def, ['neck_0', 'neck_1', 'neck_2', 'neck_3', 'neck_4', 'neck_5', 'head'], neckScale);
+  applyScaleToBones(def, ['neck_0', 'neck_1', 'neck_2', 'neck_3', 'neck_4', 'neck_5', 'neck_6', 'head'], neckScale);
 
   const legBones = [
     'front_left_upper',

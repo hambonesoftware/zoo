@@ -10,13 +10,14 @@ export const GiraffeDefinition = {
     // === Neck Chain ===
     { name: 'neck_0', parent: 'spine_upper', position: [0, 0.35, 0.4] },
     { name: 'neck_1', parent: 'neck_0',      position: [0, 0.35, 0.35] },
-    { name: 'neck_2', parent: 'neck_1',      position: [0, 0.35, 0.3] },
-    { name: 'neck_3', parent: 'neck_2',      position: [0, 0.3, 0.25] },
-    { name: 'neck_4', parent: 'neck_3',      position: [0, 0.28, 0.2] },
-    { name: 'neck_5', parent: 'neck_4',      position: [0, 0.25, 0.18] },
+    { name: 'neck_2', parent: 'neck_1',      position: [0, 0.33, 0.32] },
+    { name: 'neck_3', parent: 'neck_2',      position: [0, 0.33, 0.28] },
+    { name: 'neck_4', parent: 'neck_3',      position: [0, 0.3, 0.24] },
+    { name: 'neck_5', parent: 'neck_4',      position: [0, 0.26, 0.2] },
+    { name: 'neck_6', parent: 'neck_5',      position: [0, 0.23, 0.17] },
 
     // === Head ===
-    { name: 'head', parent: 'neck_5', position: [0, 0.18, 0.3] },
+    { name: 'head', parent: 'neck_6', position: [0, 0.18, 0.3] },
     { name: 'jaw',  parent: 'head',   position: [0, -0.08, 0.3] },
 
     // === Ossicones & Ears ===
@@ -64,12 +65,13 @@ export const GiraffeDefinition = {
     spine_upper:  [0.5, 0.55, 0.6],
 
     // === Neck Taper ===
-    neck_0: [0.4, 0.4, 0.38],
-    neck_1: [0.36, 0.36, 0.34],
-    neck_2: [0.32, 0.32, 0.3],
-    neck_3: [0.28, 0.28, 0.26],
-    neck_4: [0.24, 0.24, 0.22],
-    neck_5: [0.2, 0.2, 0.18],
+    neck_0: [0.46, 0.46, 0.44],
+    neck_1: [0.42, 0.42, 0.4],
+    neck_2: [0.38, 0.38, 0.36],
+    neck_3: [0.34, 0.34, 0.32],
+    neck_4: [0.3, 0.3, 0.28],
+    neck_5: [0.26, 0.26, 0.24],
+    neck_6: [0.22, 0.22, 0.2],
 
     head: [0.35, 0.38, 0.4],
     jaw:  [0.25, 0.2, 0.25],
