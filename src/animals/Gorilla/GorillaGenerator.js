@@ -54,6 +54,9 @@ export class GorillaGenerator {
     const variantFactor = random01(seed);
     const armScale = 1 + (variantFactor - 0.5) * 0.2;
     const headScale = 1 + (0.5 - variantFactor) * 0.1;
+    const neckBones = Array.isArray(options.neckBones) && options.neckBones.length > 0
+      ? options.neckBones
+      : ['spine_neck', 'head'];
 
     const torsoGeometry = ensureSkinnedGeometry(
       generateTorsoGeometry(skeleton, {
@@ -66,7 +69,7 @@ export class GorillaGenerator {
 
     const neckGeometry = ensureSkinnedGeometry(
       generateNeckGeometry(skeleton, {
-        bones: ['spine_neck', 'head'],
+        bones: neckBones,
         radii: [0.3, 0.25 * headScale],
         sides: 12
       }),
@@ -77,7 +80,9 @@ export class GorillaGenerator {
       generateHeadGeometry(skeleton, {
         parentBone: 'head',
         radius: 0.36 * headScale,
-        sides: 14
+        sides: 14,
+        bones: neckBones,
+        neckBone: options.neckBone
       }),
       'head'
     );

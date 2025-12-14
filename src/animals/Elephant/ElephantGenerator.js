@@ -152,6 +152,9 @@ export class ElephantGenerator {
         : 1;
     const headScale = (1.0 + (0.5 - variantFactor) * 0.15) * headScaleMultiplier; // ±7.5%
     const headRadius = 0.95 * headScale;
+    const neckBones = Array.isArray(options.neckBones) && options.neckBones.length > 0
+      ? options.neckBones
+      : ['spine_mid', 'spine_neck', 'head'];
     const torsoRadiusProfile = makeElephantTorsoRadiusProfile(headScale);
 
     // Helper to get a bone by name.
@@ -312,7 +315,9 @@ export class ElephantGenerator {
     const headGeometry = generateHeadGeometry(skeleton, {
       parentBone: 'head',
       radius: headRadius, // Big dome scaled by variant
-      sides: lowPoly ? headSidesLowPoly : 22
+      sides: lowPoly ? headSidesLowPoly : 22,
+      bones: neckBones,
+      neckBone: options.neckBone
     });
 
     // === 4. TRUNK (Prehensile) ===

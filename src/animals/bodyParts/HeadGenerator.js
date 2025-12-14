@@ -6,11 +6,17 @@ export function generateHeadGeometry(skeleton, options = {}) {
   const neckChain =
     Array.isArray(options.bones) && options.bones.length > 0
       ? options.bones
-      : null;
-  const neckBoneName = options.neckBone || (neckChain ? neckChain[neckChain.length - 1] : 'spine_neck');
+      : ['spine_mid', 'spine_neck'];
+  // Visual/regression check: confirm the dome anchors to the last neck link when a multi-joint chain is supplied.
+  const headBoneName = options.headBone || 'head';
+  const neckSequenceExcludingHead = neckChain.filter(name => name !== headBoneName);
+  const neckBoneName = options.neckBone
+    || (neckSequenceExcludingHead.length > 0
+      ? neckSequenceExcludingHead[neckSequenceExcludingHead.length - 1]
+      : neckChain[neckChain.length - 1]);
   const neckBone = skeleton.bones.find(b => b.name === neckBoneName);
-  const headBone = skeleton.bones.find(b => b.name === 'head');
-  if (!neckBone || !headBone) throw new Error(`Missing ${neckBoneName} or head bone!`);
+  const headBone = skeleton.bones.find(b => b.name === headBoneName);
+  if (!neckBone || !headBone) throw new Error(`Missing ${neckBoneName} or ${headBoneName} bone!`);
 
   skeleton.bones.forEach(bone => bone.updateMatrixWorld(true));
 
