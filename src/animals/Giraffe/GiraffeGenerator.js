@@ -106,36 +106,87 @@ export class GiraffeGenerator {
     if (headDir.lengthSq() < 1e-6) headDir.set(0, 0, 1);
     const headMid = neckTip && headPos ? neckTip.clone().lerp(headPos, 0.6) : new THREE.Vector3();
     const headLength = headPos && neckTip ? neckTip.distanceTo(headPos) + 0.2 : 0.6;
+    let headGeometry;
 
-    const headDetail = lowPoly ? 0 : 1;
-    let headGeometry = new THREE.IcosahedronGeometry(1.0, headDetail);
-    headGeometry.scale(0.3 * headScale, 0.26 * headScale, headLength * 0.55);
-    const headQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), headDir.clone().normalize());
-    headGeometry.applyQuaternion(headQuat);
-    headGeometry.translate(headMid.x, headMid.y, headMid.z);
-    headGeometry = ensureSkinnedGeometry(headGeometry, 'head');
+    const headDirNorm = headDir.clone().normalize();
+    const headQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), headDirNorm);
+
+    const muzzleLength = headLength * 0.55;
+    const muzzleRadius = 0.12 * headScale;
+    const muzzle = new THREE.CapsuleGeometry(muzzleRadius, muzzleLength, lowPoly ? 4 : 6, lowPoly ? 6 : 12);
+    muzzle.scale(0.9, 0.8, 1.0);
+    muzzle.applyQuaternion(headQuat);
+    const muzzleBase = neckTip && headPos ? neckTip.clone().lerp(headPos, 0.35) : headMid.clone();
+    muzzle.translate(muzzleBase.x + headDirNorm.x * (muzzleLength * 0.35), muzzleBase.y + headDirNorm.y * (muzzleLength * 0.35), muzzleBase.z + headDirNorm.z * (muzzleLength * 0.35));
+
+    const domeRadius = 0.24 * headScale;
+    const dome = new THREE.SphereGeometry(domeRadius, lowPoly ? 8 : 14, lowPoly ? 6 : 10, 0, Math.PI * 2, 0, Math.PI * 0.72);
+    dome.scale(1.0, 0.92, 1.05);
+    dome.applyQuaternion(headQuat);
+    const domeOffset = muzzleBase.clone().add(headDirNorm.clone().multiplyScalar(muzzleLength * 0.85));
+    dome.translate(domeOffset.x, domeOffset.y, domeOffset.z);
+
+    headGeometry = ensureSkinnedGeometry(mergeGeometries([muzzle, dome], false), 'head');
 
     // === 4. Horns ===
-    const makeConeForBone = (boneName, radius, height) => {
+    const makeCurvedHorn = (boneName, radius, length, lateralCurve) => {
       const bonePos = samplePosition(boneName) || new THREE.Vector3();
-      const cone = new THREE.ConeGeometry(radius, height, lowPoly ? 6 : 10);
-      cone.translate(bonePos.x, bonePos.y + height * 0.5, bonePos.z);
-      return ensureSkinnedGeometry(cone, boneName);
+      const base = bonePos.clone();
+      const tip = bonePos.clone().add(new THREE.Vector3(0, length * 0.9, 0));
+      const control = bonePos
+        .clone()
+        .add(new THREE.Vector3(lateralCurve, length * 0.6, length * 0.08));
+      const curve = new THREE.CatmullRomCurve3([base, control, tip]);
+      const tube = new THREE.TubeGeometry(curve, lowPoly ? 8 : 14, radius, lowPoly ? 6 : 10, false);
+      const capTop = new THREE.SphereGeometry(radius * 0.95, lowPoly ? 6 : 10, lowPoly ? 4 : 8);
+      capTop.translate(tip.x, tip.y, tip.z);
+      const capBase = new THREE.SphereGeometry(radius, lowPoly ? 6 : 10, lowPoly ? 4 : 8);
+      capBase.translate(base.x, base.y, base.z);
+
+      const hornGeometry = mergeGeometries([tube, capTop, capBase], false);
+      return ensureSkinnedGeometry(hornGeometry, boneName);
     };
 
-    const hornLeft = makeConeForBone('horn_left', 0.06, 0.22);
-    const hornRight = makeConeForBone('horn_right', 0.06, 0.22);
+    const hornLeft = makeCurvedHorn('horn_left', 0.05, 0.24, -0.05);
+    const hornRight = makeCurvedHorn('horn_right', 0.05, 0.24, 0.05);
 
     // === 5. Ears ===
-    const makeEar = (boneName) => {
+    const makeEar = (boneName, flip = 1) => {
       const bonePos = samplePosition(boneName) || new THREE.Vector3();
-      const earGeo = new THREE.BoxGeometry(0.28, 0.14, 0.05);
-      earGeo.translate(bonePos.x, bonePos.y, bonePos.z - 0.02);
+
+      const earShape = new THREE.Shape();
+      earShape.moveTo(0, 0);
+      earShape.lineTo(0.18, 0.04);
+      earShape.lineTo(0.12, 0.16);
+      earShape.lineTo(-0.02, 0.12);
+      earShape.closePath();
+
+      const earGeo = new THREE.ExtrudeGeometry(earShape, { depth: 0.045, bevelEnabled: false });
+      earGeo.translate(-0.08, -0.08, -0.0225);
+      earGeo.scale(1, 1, 1 + (flip < 0 ? 0.05 : 0));
+      earGeo.rotateZ(THREE.MathUtils.degToRad(10 * flip));
+      earGeo.rotateX(THREE.MathUtils.degToRad(-8));
+      earGeo.translate(bonePos.x, bonePos.y + 0.02, bonePos.z - 0.04);
       return ensureSkinnedGeometry(earGeo, boneName);
     };
 
-    const earLeft = makeEar('ear_left');
-    const earRight = makeEar('ear_right');
+    const earLeft = makeEar('ear_left', -1);
+    const earRight = makeEar('ear_right', 1);
+
+    // === Neck / Head Blend ===
+    let neckBlendGeometry = null;
+    if (neckTip && headPos) {
+      const blendLength = Math.max(0.08, headLength * 0.15);
+      const radiusBottom = 0.18 * neckScale;
+      const radiusTop = muzzleRadius * 0.9;
+      const blendCylinder = new THREE.CylinderGeometry(radiusTop, radiusBottom, blendLength, lowPoly ? 8 : 12, 1, false);
+      const blendQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), headDirNorm);
+      blendCylinder.applyQuaternion(blendQuat);
+      const blendStart = neckTip.clone();
+      const blendOffset = headDirNorm.clone().multiplyScalar(blendLength * 0.5);
+      blendCylinder.translate(blendStart.x + blendOffset.x, blendStart.y + blendOffset.y, blendStart.z + blendOffset.z);
+      neckBlendGeometry = ensureSkinnedGeometry(blendCylinder, 'neck_5');
+    }
 
     // === 6. Tail ===
     const tailGeometry = ensureSkinnedGeometry(
@@ -200,6 +251,7 @@ export class GiraffeGenerator {
         torsoGeometry,
         neckGeometry,
         headGeometry,
+        neckBlendGeometry,
         hornLeft,
         hornRight,
         earLeft,
@@ -209,7 +261,7 @@ export class GiraffeGenerator {
         fr,
         bl,
         br
-      ],
+      ].filter(Boolean),
       false
     );
 
