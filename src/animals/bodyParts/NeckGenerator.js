@@ -31,9 +31,39 @@ export function generateNeckGeometry(skeleton, options = {}) {
     Array.isArray(options.radii) && options.radii.length > 0
       ? options.radii
       : [baseRadius, neckRadius];
+  const ringsPerSegment = Math.max(1, options.ringsPerSegment || 1);
   const radii = neckChain.map((_, idx) =>
     radiiSource[Math.min(idx, radiiSource.length - 1)]
   );
+
+  const ringEntries = [];
+  for (let i = 0; i < neckPoints.length - 1; i++) {
+    const start = neckPoints[i];
+    const end = neckPoints[i + 1];
+    const r0 = radii[i];
+    const r1 = radii[i + 1];
+
+    for (let step = 0; step < ringsPerSegment; step++) {
+      const t = step / ringsPerSegment;
+      ringEntries.push({
+        center: start.clone().lerp(end, t),
+        radius: THREE.MathUtils.lerp(r0, r1, t),
+        boneA: neckChain[i],
+        boneB: neckChain[i + 1],
+        weightA: 1 - t,
+        weightB: t
+      });
+    }
+  }
+
+  ringEntries.push({
+    center: neckPoints[neckPoints.length - 1].clone(),
+    radius: radii[radii.length - 1],
+    boneA: neckChain[neckChain.length - 1],
+    boneB: neckChain[neckChain.length - 1],
+    weightA: 1,
+    weightB: 0
+  });
 
   const positions = [];
   const normals = [];
@@ -44,17 +74,18 @@ export function generateNeckGeometry(skeleton, options = {}) {
   const ringStarts = [];
   const ringAxes = [];
 
-  for (let i = 0; i < neckPoints.length; i++) {
-    const center = neckPoints[i];
-    const prev = (i === 0) ? neckPoints[i] : neckPoints[i - 1];
-    const next = (i === neckPoints.length - 1) ? neckPoints[i] : neckPoints[i + 1];
+  for (let i = 0; i < ringEntries.length; i++) {
+    const ringEntry = ringEntries[i];
+    const center = ringEntry.center;
+    const prev = i === 0 ? ringEntry.center : ringEntries[i - 1].center;
+    const next = i === ringEntries.length - 1 ? ringEntry.center : ringEntries[i + 1].center;
     let axis = next.clone().sub(prev).normalize();
     if (axis.lengthSq() < 1e-6) axis = new THREE.Vector3(0, 1, 0);
     ringAxes.push(axis.clone());
     const up = Math.abs(axis.y) > 0.99 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
     
     // Use imported createRing
-    const ring = createRing(center, axis, radii[i], sides, up);
+    const ring = createRing(center, axis, ringEntry.radius, sides, up);
 
     ringStarts.push(positions.length / 3);
     for (let j = 0; j < ring.length; j++) {
@@ -62,25 +93,17 @@ export function generateNeckGeometry(skeleton, options = {}) {
       positions.push(v.x, v.y + yOffset, v.z);
       const norm = v.clone().sub(center).normalize();
       normals.push(norm.x, norm.y, norm.z);
-      uvs.push(j / sides, i / (neckPoints.length - 1));
-      let boneA, boneB, wa, wb;
-      if (i === 0) {
-        boneA = boneIndexMap[neckChain[0]];
-        boneB = boneA; wa = 1; wb = 0;
-      } else if (i === neckPoints.length - 1) {
-        boneA = boneIndexMap[neckChain[neckChain.length - 1]];
-        boneB = boneA; wa = 1; wb = 0;
-      } else {
-        boneA = boneIndexMap[neckChain[i - 1]];
-        boneB = boneIndexMap[neckChain[i]];
-        wa = 0.5; wb = 0.5;
-      }
+        uvs.push(j / sides, i / Math.max(1, ringEntries.length - 1));
+      const boneA = boneIndexMap[ringEntry.boneA];
+      const boneB = boneIndexMap[ringEntry.boneB];
+      const wa = ringEntry.weightA;
+      const wb = ringEntry.weightB;
       skinIndices.push(boneA, boneB, 0, 0);
       skinWeights.push(wa, wb, 0, 0);
     }
   }
 
-  for (let seg = 0; seg < neckPoints.length - 1; seg++) {
+  for (let seg = 0; seg < ringEntries.length - 1; seg++) {
     bridgeRings(ringStarts[seg], ringStarts[seg + 1], sides, indices);
   }
 

@@ -72,7 +72,7 @@ export class GiraffeLocomotion {
     const sway = Math.sin(t * this.neckSwaySpeed) * this.neckSwayAmplitude;
     let falloff = 1.0;
 
-    for (let i = 0; i <= 5; i += 1) {
+    for (let i = 0; i <= 6; i += 1) {
       const key = `neck_${i}`;
       const bone = bones[key];
       if (!bone) continue;
