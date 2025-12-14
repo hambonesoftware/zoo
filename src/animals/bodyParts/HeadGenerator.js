@@ -3,9 +3,16 @@
 import * as THREE from 'three';
 
 export function generateHeadGeometry(skeleton, options = {}) {
-  const neckBone = skeleton.bones.find(b => b.name === 'spine_neck');
+  const neckChain =
+    Array.isArray(options.bones) && options.bones.length > 0
+      ? options.bones
+      : null;
+  const neckBoneName = options.neckBone || (neckChain ? neckChain[neckChain.length - 1] : 'spine_neck');
+  const neckBone = skeleton.bones.find(b => b.name === neckBoneName);
   const headBone = skeleton.bones.find(b => b.name === 'head');
-  if (!neckBone || !headBone) throw new Error('Missing spine_neck or head bone!');
+  if (!neckBone || !headBone) throw new Error(`Missing ${neckBoneName} or head bone!`);
+
+  skeleton.bones.forEach(bone => bone.updateMatrixWorld(true));
 
   const neckPos = new THREE.Vector3().setFromMatrixPosition(neckBone.matrixWorld);
   const headPos = new THREE.Vector3().setFromMatrixPosition(headBone.matrixWorld);
