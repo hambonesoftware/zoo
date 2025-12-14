@@ -75,6 +75,9 @@ export class CatGenerator {
     const legScale    = 1.0 + (variantFactor - 0.5) * 0.2;   // ±10%
     const tailScale   = 1.0 + (variantFactor - 0.5) * 0.15;  // ±7.5%
     const headScale   = 1.0 + (0.5 - variantFactor) * 0.1;   // ±5%
+    const neckBones = Array.isArray(options.neckBones) && options.neckBones.length > 0
+      ? options.neckBones
+      : ['spine_neck', 'head'];
 
     // === 1. TORSO (sleek feline form) ===
     // Radii indices map to: [Hips, Ribcage, NeckBase, HeadBase]
@@ -86,7 +89,7 @@ export class CatGenerator {
 
     // === 2. NECK ===
     const neckGeometry = ensureSkinnedGeometry(generateNeckGeometry(skeleton, {
-      bones: ['spine_neck', 'head'],
+      bones: neckBones,
       radii: [0.26, 0.2 * headScale],
       sides: 8
     }), 'spine_neck');
@@ -95,7 +98,9 @@ export class CatGenerator {
     const headGeometry = ensureSkinnedGeometry(generateHeadGeometry(skeleton, {
       parentBone: 'head',
       radius: 0.22 * headScale,
-      sides: 14
+      sides: 14,
+      bones: neckBones,
+      neckBone: options.neckBone
     }), 'head');
 
     // === 4. EARS ===

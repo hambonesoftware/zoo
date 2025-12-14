@@ -62,6 +62,11 @@ export class GiraffeGenerator {
     const headScale = 1 + (0.5 - variantFactor) * 0.1; // ±5%
     const legScale = (1 + (variantFactor - 0.5) * 0.15) * (options.legRadiusScale || 1); // ±7.5%
     const torsoScale = (1 + (variantFactor - 0.5) * 0.08) * (options.torsoRadiusScale || 1); // subtle ±4%
+    const neckBones = Array.isArray(options.neckBones) && options.neckBones.length > 0
+      ? options.neckBones
+      : ['neck_0', 'neck_1', 'neck_2', 'neck_3', 'neck_4', 'neck_5', 'neck_6'];
+    const neckTipName = neckBones[neckBones.length - 1] || 'neck_6';
+    const neckBlendBone = options.neckBone || (neckBones.length > 1 ? neckBones[neckBones.length - 2] : neckTipName);
 
     const lowPoly = options.lowPoly === true;
     const lowPolySides = options.sides || (lowPoly ? 10 : 18);
@@ -83,9 +88,9 @@ export class GiraffeGenerator {
     // === 2. Neck ===
     const neckGeometry = ensureSkinnedGeometry(
       generateNeckGeometry(skeleton, {
-        bones: ['neck_0', 'neck_1', 'neck_2', 'neck_3', 'neck_4', 'neck_5', 'neck_6'],
+        bones: neckBones,
         headBone: 'head',
-        neckTipBone: 'neck_6',
+        neckTipBone: neckTipName,
         sides: lowPolySides,
         ringsPerSegment: neckRingsPerSegment,
         radii: [
@@ -103,7 +108,7 @@ export class GiraffeGenerator {
     );
 
     // === 3. Head ===
-    const neckTip = samplePosition('neck_6');
+    const neckTip = samplePosition(neckTipName);
     const headPos = samplePosition('head');
     const headDir = headPos && neckTip ? headPos.clone().sub(neckTip) : new THREE.Vector3(0, 0, 1);
     if (headDir.lengthSq() < 1e-6) headDir.set(0, 0, 1);
@@ -188,7 +193,7 @@ export class GiraffeGenerator {
       const blendStart = neckTip.clone();
       const blendOffset = headDirNorm.clone().multiplyScalar(blendLength * 0.5);
       blendCylinder.translate(blendStart.x + blendOffset.x, blendStart.y + blendOffset.y, blendStart.z + blendOffset.z);
-      neckBlendGeometry = ensureSkinnedGeometry(blendCylinder, 'neck_5');
+      neckBlendGeometry = ensureSkinnedGeometry(blendCylinder, neckBlendBone);
     }
 
     // === 6. Tail ===
