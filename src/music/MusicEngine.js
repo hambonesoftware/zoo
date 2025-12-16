@@ -2,6 +2,13 @@
 // Coordinates AnimalMusicBrain state with the audio + visual pipeline.
 
 import { createMusicEvent } from './MusicEvent.js';
+import { getProfileForAnimal } from './MusicProfiles.js';
+
+const DEFAULT_PROFILE = {
+  scaleName: 'C_major',
+  rootMidiNote: 60,
+  tempoBPM: 120
+};
 
 export class MusicEngine {
   constructor({ soundFontEngine, theoryEngine, noteHighway = null, lookaheadSeconds = 0.12 } = {}) {
@@ -63,7 +70,7 @@ export class MusicEngine {
     const gaitMeta = footfall.gait || footfall.meta || {};
     const baseStart = this.resolveFootfallTime(footfall, audioTime);
     const startTime = baseStart + this.lookaheadSeconds;
-    const duration = this.resolveFootfallDuration(gaitMeta, brain);
+    const duration = this.resolveFootfallDuration({ gaitMeta, profile, footfall });
     const velocity = this.resolveFootfallVelocity(gaitMeta);
 
     return createMusicEvent({
@@ -76,11 +83,18 @@ export class MusicEngine {
     });
   }
 
+  getFallbackProfile(animalId) {
+    return getProfileForAnimal(animalId) || DEFAULT_PROFILE;
+  }
+
   resolveMidiNote(footfall, profile) {
     if (typeof footfall.midiNote === 'number') return footfall.midiNote;
     const degree = footfall.degree ?? footfall.scaleDegree ?? 1;
-    const notes = this.theoryEngine?.scaleDegreesToMidiNotes(profile, [degree]);
-    return Array.isArray(notes) && typeof notes[0] === 'number' ? notes[0] : null;
+    const activeProfile = profile || this.getFallbackProfile(footfall.animalId);
+    const notes = this.theoryEngine?.scaleDegreesToMidiNotes(activeProfile, [degree]);
+    if (Array.isArray(notes) && typeof notes[0] === 'number') return notes[0];
+
+    return activeProfile.rootMidiNote ?? DEFAULT_PROFILE.rootMidiNote;
   }
 
   resolveFootfallTime(footfall, audioTime) {
@@ -90,7 +104,7 @@ export class MusicEngine {
     return audioTime;
   }
 
-  resolveFootfallDuration(gaitMeta = {}, brain) {
+  resolveFootfallDuration({ gaitMeta = {}, profile, footfall } = {}) {
     const durationCandidates = [
       gaitMeta.contactDuration,
       gaitMeta.stanceDuration,
@@ -100,7 +114,9 @@ export class MusicEngine {
     const duration = durationCandidates.find((value) => typeof value === 'number' && value > 0);
     if (typeof duration === 'number') return duration;
 
-    const secondsPerBeat = brain?.getSecondsPerBeat ? brain.getSecondsPerBeat() : 0.5;
+    const tempoBPMCandidates = [footfall?.tempoBPM, gaitMeta.tempoBPM, profile?.tempoBPM];
+    const tempoBPM = tempoBPMCandidates.find((value) => typeof value === 'number' && value > 0) || DEFAULT_PROFILE.tempoBPM;
+    const secondsPerBeat = 60 / tempoBPM;
     return secondsPerBeat * 0.5;
   }
 
