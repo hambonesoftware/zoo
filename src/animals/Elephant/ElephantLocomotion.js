@@ -107,6 +107,10 @@ export class ElephantLocomotion {
     // IMPORTANT: we never hard-set root.position.x anymore (that was snapping the elephant toward x=0).
     this._bodySwayWorld = new THREE.Vector3(0, 0, 0);
 
+    // Studio-friendly flag to keep the elephant roughly anchored while still
+    // running the gait cycle (legs/body move, root stays put).
+    this.walkInPlace = !!elephant?.walkInPlace;
+
     // Gait parameters (tuned for a heavier, more natural elephant walk)
     this.gait = {
       // Fraction of the cycle spent in swing (foot in the air).
@@ -148,6 +152,10 @@ export class ElephantLocomotion {
 
       if (typeof env.sizeScale === 'number') this.sizeScale = env.sizeScale;
     }
+  }
+
+  setWalkInPlace(enabled) {
+    this.walkInPlace = !!enabled;
   }
 
   // Called by ElephantBehavior when the rest pose is set up.
@@ -671,6 +679,7 @@ export class ElephantLocomotion {
 
   moveForward(root, speed, dt, maxDistance = null) {
     if (!root || speed <= 0 || dt <= 0) return;
+    if (this.walkInPlace) return;
 
     const step = speed * dt;
     const clampedStep = maxDistance !== null ? Math.min(step, maxDistance) : step;
@@ -688,6 +697,7 @@ export class ElephantLocomotion {
   }
 
   keepWithinBounds(root) {
+    if (this.walkInPlace) return;
     const afterMove = this.tempVec.copy(root.position).sub(this.enclosureCenter);
     afterMove.y = 0;
     const distAfter = afterMove.length();
