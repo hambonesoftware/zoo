@@ -24,6 +24,18 @@ export class CatLocomotion {
     this.tailSwayAmplitude = 0.35;
     this.tailSwaySpeed = 1.6;
     this.spineSwayAmplitude = 0.05;
+
+    this._footfallListener = null;
+    this._limbContactState = {
+      front_left: null,
+      front_right: null,
+      rear_left: null,
+      rear_right: null
+    };
+  }
+
+  setFootfallListener(listener) {
+    this._footfallListener = typeof listener === 'function' ? listener : null;
   }
 
   setState(nextState) {
@@ -161,6 +173,8 @@ export class CatLocomotion {
       lift: pawLift * 0.8
     });
 
+    this._trackFootfall('front_left', phases.front_left, speedScale);
+
     this._applyLegPose(bones, {
       shoulder: 'front_right_shoulder',
       upper: 'front_right_upper',
@@ -171,6 +185,8 @@ export class CatLocomotion {
       knee: kneeFront,
       lift: pawLift * 0.8
     });
+
+    this._trackFootfall('front_right', phases.front_right, speedScale);
 
     this._applyLegPose(bones, {
       shoulder: 'rear_left_hip',
@@ -183,6 +199,8 @@ export class CatLocomotion {
       lift: pawLift
     });
 
+    this._trackFootfall('rear_left', phases.rear_left, speedScale);
+
     this._applyLegPose(bones, {
       shoulder: 'rear_right_hip',
       upper: 'rear_right_upper',
@@ -193,6 +211,8 @@ export class CatLocomotion {
       knee: kneeRear,
       lift: pawLift
     });
+
+    this._trackFootfall('rear_right', phases.rear_right, speedScale);
   }
 
   _applyLegPose(bones, { shoulder, upper, lower, paw, phase, swing, knee, lift }) {
@@ -219,6 +239,26 @@ export class CatLocomotion {
     if (pawBone) {
       pawBone.rotation.x = -Math.max(0, liftVal * 0.6);
     }
+  }
+
+  _trackFootfall(limbId, phase, speedScale) {
+    const contact = Math.sin(phase + Math.PI / 2) <= 0;
+    const prev = this._limbContactState[limbId];
+    this._limbContactState[limbId] = contact;
+
+    if (prev === null) return;
+    if (!contact || prev === contact || !this._footfallListener) return;
+
+    const strideSpeed = (this.walkCycleSpeed * speedScale) / (Math.PI * 2);
+
+    this._footfallListener({
+      animalId: this.cat?.id || 'cat',
+      limbId,
+      phase: phase % (Math.PI * 2),
+      audioHintTime: 0,
+      gait: this.state,
+      strideSpeed
+    });
   }
 
   _applySpineWalk(bones, phase, speedScale) {

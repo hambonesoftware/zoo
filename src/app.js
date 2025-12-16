@@ -5,7 +5,7 @@ import { AnimalRegistry, getRegisteredAnimals } from './animals/AnimalRegistry.j
 import { SoundFontEngine } from './audio/SoundFontEngine.js';
 import { TheoryEngine } from './music/TheoryEngine.js';
 import { AnimalMusicBrain } from './music/AnimalMusicBrain.js';
-import { MUSIC_PROFILES, getProfileForAnimal } from './music/MusicProfiles.js';
+import { MIDI_CHANNEL_ASSIGNMENTS, MUSIC_PROFILES, getProfileForAnimal } from './music/MusicProfiles.js';
 import { MusicEngine } from './music/MusicEngine.js';
 import { NoteHighway } from './ui/NoteHighway.js';
 import { downloadAsJSON, downloadAsOBJ } from './debug/exporters.js';
@@ -108,21 +108,20 @@ class App {
   }
 
   configureMusicBrains() {
-    const catProfile = getProfileForAnimal('cat') || MUSIC_PROFILES.CatCreature;
-    const elephantProfile = getProfileForAnimal('elephant') || MUSIC_PROFILES.ElephantCreature;
+    const animals = ['cat', 'elephant', 'giraffe', 'snake'];
 
-    if (catProfile) {
-      const catBrain = new AnimalMusicBrain(catProfile);
-      this.musicEngine.registerAnimalBrain('cat', catBrain);
-      this.soundFontEngine.assignChannelForAnimal('cat', 0);
-      this.soundFontEngine.setInstrumentForAnimal('cat', catProfile.programNumber);
-    }
+    for (const animal of animals) {
+      const profile = getProfileForAnimal(animal) || MUSIC_PROFILES[`${animal[0].toUpperCase()}${animal.slice(1)}Creature`];
+      if (!profile) continue;
 
-    if (elephantProfile) {
-      const elephantBrain = new AnimalMusicBrain(elephantProfile);
-      this.musicEngine.registerAnimalBrain('elephant', elephantBrain);
-      this.soundFontEngine.assignChannelForAnimal('elephant', 1);
-      this.soundFontEngine.setInstrumentForAnimal('elephant', elephantProfile.programNumber);
+      const brain = new AnimalMusicBrain(profile);
+      this.musicEngine.registerAnimalBrain(animal, brain);
+
+      const channel = MIDI_CHANNEL_ASSIGNMENTS[animal];
+      if (typeof channel === 'number') {
+        this.soundFontEngine.assignChannelForAnimal(animal, channel);
+      }
+      this.soundFontEngine.setInstrumentForAnimal(animal, profile.programNumber);
     }
   }
 
