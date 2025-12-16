@@ -5,6 +5,8 @@ import { AnimalRegistry, getRegisteredAnimals } from './animals/AnimalRegistry.j
 import { SoundFontEngine } from './audio/SoundFontEngine.js';
 import { TheoryEngine } from './music/TheoryEngine.js';
 import { MusicEngine } from './music/MusicEngine.js';
+import { AnimalMusicBrain } from './music/AnimalMusicBrain.js';
+import { MIDI_CHANNEL_ASSIGNMENTS, getProfileForAnimal } from './music/MusicProfiles.js';
 import { NoteHighway } from './ui/NoteHighway.js';
 import { downloadAsJSON, downloadAsOBJ } from './debug/exporters.js';
 import { TuningPanel } from './ui/TuningPanel.js';
@@ -55,6 +57,9 @@ class App {
       noteHighway: this.noteHighway
     });
     this.audioReady = false;
+    this.programOptions = this.soundFontEngine.getProgramList();
+    this.instrumentSelections = {};
+    this.refreshMusicForAnimal(defaultAnimalType);
     this.setupAudioBootstrap();
 
     // UI wiring
@@ -118,6 +123,7 @@ class App {
       const type = select.value;
       this.currentAnimalType = type;
       this.world.setAnimalType(type);
+      this.refreshMusicForAnimal(type);
       this.syncTuningPanel(type);
     });
 
@@ -150,7 +156,11 @@ class App {
         this.applyPreset(values, meta);
       },
       onUndo: () => this.undoTuning(),
-      onRedo: () => this.redoTuning()
+      onRedo: () => this.redoTuning(),
+      onInstrumentChange: (programNumber) => this.setInstrumentSelection(this.currentAnimalType, programNumber),
+      programOptions: this.programOptions,
+      defaultProgram: this.getInstrumentSelection(defaultAnimalType),
+      defaultProgramName: this.getDefaultProgramLabel(defaultAnimalType)
     });
 
     this.syncTuningPanel(defaultAnimalType);
@@ -168,7 +178,12 @@ class App {
     const defaults = module.getDefaultTuning ? module.getDefaultTuning() : {};
     this.currentTuning = { ...current };
     this.resetHistory(current);
-    this.tuningPanel.setSchema(schema, current, animalType, defaults, this.schemaVersion);
+    const audioConfig = {
+      programOptions: this.programOptions,
+      selectedProgram: this.getInstrumentSelection(animalType),
+      defaultProgramName: this.getDefaultProgramLabel(animalType)
+    };
+    this.tuningPanel.setSchema(schema, current, animalType, defaults, this.schemaVersion, audioConfig);
   }
 
   handleTuningChange(change) {
@@ -279,7 +294,19 @@ class App {
     if (!module) return;
     const defaults = module.getDefaultTuning ? module.getDefaultTuning() : {};
     this.applySnapshot(defaults);
-    this.tuningPanel?.setSchema(this.currentSchema, defaults, this.currentAnimalType, defaults, this.schemaVersion);
+    const audioConfig = {
+      programOptions: this.programOptions,
+      selectedProgram: this.getInstrumentSelection(this.currentAnimalType),
+      defaultProgramName: this.getDefaultProgramLabel(this.currentAnimalType)
+    };
+    this.tuningPanel?.setSchema(
+      this.currentSchema,
+      defaults,
+      this.currentAnimalType,
+      defaults,
+      this.schemaVersion,
+      audioConfig
+    );
   }
 
   applyPreset(values = {}, meta = {}) {
@@ -525,6 +552,77 @@ class App {
     };
     const filename = `${safeName || 'preset'}_${this.currentAnimalType || 'animal'}_bundle.json`;
     downloadAsJSON(payload, filename);
+  }
+
+  getInstrumentSelection(animalType) {
+    const key = animalType || this.currentAnimalType;
+    if (!key) return null;
+    if (Object.prototype.hasOwnProperty.call(this.instrumentSelections, key)) {
+      return this.instrumentSelections[key];
+    }
+    const fallback = this.getDefaultInstrumentProgram(key);
+    this.instrumentSelections[key] = fallback;
+    return fallback;
+  }
+
+  getDefaultInstrumentProgram(animalType) {
+    const profile = getProfileForAnimal(animalType) || {};
+    return typeof profile.programNumber === 'number' ? profile.programNumber : 0;
+  }
+
+  getDefaultProgramLabel(animalType) {
+    const program = this.getDefaultInstrumentProgram(animalType);
+    const name = this.soundFontEngine?.getProgramName?.(program);
+    return name ? `Default (${name})` : 'Default instrument';
+  }
+
+  setInstrumentSelection(animalType, programNumber) {
+    const safeProgram =
+      typeof programNumber === 'number' ? programNumber : this.getDefaultInstrumentProgram(animalType);
+    this.instrumentSelections[animalType] = safeProgram;
+    this.applyInstrumentSelection(animalType);
+  }
+
+  applyInstrumentSelection(animalType) {
+    const program = this.getInstrumentSelection(animalType);
+    if (this.soundFontEngine) {
+      this.soundFontEngine.setInstrumentForAnimal(animalType, program);
+      const channel = MIDI_CHANNEL_ASSIGNMENTS[animalType];
+      if (typeof channel === 'number') {
+        this.soundFontEngine.assignChannelForAnimal(animalType, channel);
+      }
+    }
+
+    const active = this.world?.getActiveAnimal?.();
+    if (active?.root?.behavior?.setInstrumentProgram && this.currentAnimalType === animalType) {
+      active.root.behavior.setInstrumentProgram(program);
+    }
+  }
+
+  refreshMusicForAnimal(animalType) {
+    const profile = getProfileForAnimal(animalType) || {};
+    if (this.musicEngine) {
+      this.musicEngine.registerAnimalBrain(animalType, new AnimalMusicBrain(profile));
+    }
+
+    this.applyInstrumentSelection(animalType);
+    this.attachFootfallListener(animalType);
+  }
+
+  attachFootfallListener(animalType) {
+    if (!this.musicEngine) return;
+    const active = this.world?.getActiveAnimal?.();
+    const behavior = active?.root?.behavior;
+    if (!behavior || typeof behavior.setFootfallListener !== 'function') return;
+
+    behavior.setFootfallListener((footfall) => {
+      const payload = {
+        ...footfall,
+        animalId: animalType,
+        instrumentProgram: this.getInstrumentSelection(animalType)
+      };
+      this.musicEngine.enqueueFootfallEvent(payload);
+    });
   }
 }
 

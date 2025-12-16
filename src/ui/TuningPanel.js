@@ -23,7 +23,19 @@ const DEFAULT_GROUP_ORDER = {
 const DEFAULT_OPEN_GROUPS = new Set(['Global', 'Skeleton', 'Bones', 'Torso', 'Trunk', 'Tusks']);
 
 export class TuningPanel {
-  constructor({ onTuningChange, onReset, onPresetLoad, onFrame, onCameraReset, onUndo, onRedo } = {}) {
+  constructor({
+    onTuningChange,
+    onReset,
+    onPresetLoad,
+    onFrame,
+    onCameraReset,
+    onUndo,
+    onRedo,
+    onInstrumentChange,
+    programOptions = [],
+    defaultProgram = null,
+    defaultProgramName = 'Default instrument'
+  } = {}) {
     this.onTuningChange = onTuningChange;
     this.onReset = onReset;
     this.onPresetLoad = onPresetLoad;
@@ -31,6 +43,7 @@ export class TuningPanel {
     this.onCameraReset = onCameraReset;
     this.onUndo = onUndo;
     this.onRedo = onRedo;
+    this.onInstrumentChange = onInstrumentChange;
 
     this.schema = {};
     this.values = {};
@@ -42,6 +55,9 @@ export class TuningPanel {
     this.searchQuery = '';
     this.showAdvanced = false;
     this.tierFilter = 'all';
+    this.programOptions = programOptions || [];
+    this.selectedProgram = typeof defaultProgram === 'number' ? defaultProgram : null;
+    this.defaultProgramName = defaultProgramName;
 
     this.panelWidth = this.readStoredWidth();
     this.collapsed = this.readStoredCollapsed();
@@ -65,10 +81,12 @@ export class TuningPanel {
     this.undoButton = this.root.querySelector('#zoo-tuning-undo');
     this.redoButton = this.root.querySelector('#zoo-tuning-redo');
     this.deletePresetButton = this.root.querySelector('#zoo-tuning-delete');
+    this.instrumentSelect = this.root.querySelector('#zoo-tuning-instrument');
 
     this.attachEventListeners();
     this.updateResponsiveMode();
     this.applyCollapsedState();
+    this.setInstrumentOptions(this.programOptions, this.selectedProgram, this.defaultProgramName);
   }
 
   attachEventListeners() {
@@ -135,6 +153,15 @@ export class TuningPanel {
     this.tierFilterSelect?.addEventListener('change', () => {
       this.tierFilter = this.tierFilterSelect.value || 'all';
       this.renderFields();
+    });
+
+    this.instrumentSelect?.addEventListener('change', () => {
+      const value = this.instrumentSelect.value;
+      const programNumber = value === '' ? null : Number(value);
+      this.selectedProgram = programNumber;
+      if (typeof this.onInstrumentChange === 'function') {
+        this.onInstrumentChange(programNumber);
+      }
     });
 
     this.resizeHandle?.addEventListener('mousedown', (event) => {
@@ -207,7 +234,11 @@ export class TuningPanel {
             </label>
           </div>
         </div>
-        <div class="zoo-tuning-body">
+          <div class="zoo-tuning-body">
+          <div class="zoo-tuning-audio">
+            <label for="zoo-tuning-instrument">Instrument</label>
+            <select id="zoo-tuning-instrument"></select>
+          </div>
           <div class="zoo-tuning-presets">
             <div class="zoo-tuning-presets-row">
               <input id="zoo-tuning-preset-name" type="text" placeholder="Preset name" />
@@ -236,12 +267,24 @@ export class TuningPanel {
     return panel;
   }
 
-  setSchema(schema = {}, values = {}, animalId = null, defaults = {}, schemaVersion = '1.0.0') {
+  setSchema(
+    schema = {},
+    values = {},
+    animalId = null,
+    defaults = {},
+    schemaVersion = '1.0.0',
+    audioConfig = {}
+  ) {
     this.currentAnimalId = animalId ?? this.currentAnimalId;
     this.schema = schema || {};
     this.schemaVersion = schemaVersion || '1.0.0';
     this.defaults = { ...defaults };
     this.values = { ...this.defaults, ...values };
+    const audioOptions = audioConfig || {};
+    this.programOptions = audioOptions.programOptions || this.programOptions;
+    this.selectedProgram =
+      typeof audioOptions.selectedProgram === 'number' ? audioOptions.selectedProgram : null;
+    this.defaultProgramName = audioOptions.defaultProgramName || this.defaultProgramName;
     this.setRebuilding(false);
     this.refreshPresetOptions();
 
@@ -251,6 +294,8 @@ export class TuningPanel {
     if (this.tierFilterSelect) {
       this.tierFilterSelect.value = this.tierFilter;
     }
+
+    this.setInstrumentOptions(this.programOptions, this.selectedProgram, this.defaultProgramName);
 
     this.groupEntries = Object.entries(this.schema).map(([key, meta = {}]) => {
       const label = meta.label || key;
@@ -266,6 +311,37 @@ export class TuningPanel {
     });
 
     this.renderFields();
+  }
+
+  setInstrumentOptions(programs = [], selectedProgram = null, defaultProgramName = 'Default instrument') {
+    this.programOptions = Array.isArray(programs) ? programs : [];
+    this.selectedProgram = typeof selectedProgram === 'number' ? selectedProgram : null;
+    this.defaultProgramName = defaultProgramName || 'Default instrument';
+
+    if (!this.instrumentSelect) return;
+
+    this.instrumentSelect.innerHTML = '';
+
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = this.defaultProgramName;
+    this.instrumentSelect.appendChild(defaultOption);
+
+    for (const program of this.programOptions) {
+      const option = document.createElement('option');
+      option.value = program.number;
+      option.textContent = program.name
+        ? `${program.name} (${program.number})`
+        : `Program ${program.number}`;
+      if (this.selectedProgram === program.number) {
+        option.selected = true;
+      }
+      this.instrumentSelect.appendChild(option);
+    }
+
+    if (this.selectedProgram === null) {
+      this.instrumentSelect.value = '';
+    }
   }
 
   setValues(values = {}) {

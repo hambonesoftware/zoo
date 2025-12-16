@@ -21,6 +21,8 @@ export class ElephantBehavior {
     this.skeleton = skeleton;
     this.mesh = mesh;
     this.time = 0;
+    this.instrumentProgram =
+      typeof opts.instrumentProgram === 'number' ? opts.instrumentProgram : null;
 
     // Environment config (enclosure/pond). Passed in from ElephantPen.
     this.environment = null;
@@ -47,6 +49,10 @@ export class ElephantBehavior {
     if (this.locomotion && typeof this.locomotion.setFootfallListener === 'function') {
       this.locomotion.setFootfallListener(listener);
     }
+  }
+
+  setInstrumentProgram(programNumber) {
+    this.instrumentProgram = typeof programNumber === 'number' ? programNumber : null;
   }
 
   /**
@@ -102,7 +108,8 @@ export class ElephantBehavior {
     return {
       state: this.state,
       time: this.time,
-      locomotionState: this.locomotion ? this.locomotion.state : null
+      locomotionState: this.locomotion ? this.locomotion.state : null,
+      instrumentProgram: this.instrumentProgram
     };
   }
 }

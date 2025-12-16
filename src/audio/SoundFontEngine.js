@@ -6,6 +6,22 @@
 
 import { audioContextManager } from './AudioContextManager.js';
 
+const GENERAL_MIDI_PROGRAMS = [
+  { number: 0, name: 'Acoustic Grand Piano' },
+  { number: 11, name: 'Vibraphone' },
+  { number: 24, name: 'Nylon Guitar' },
+  { number: 32, name: 'Acoustic Bass' },
+  { number: 40, name: 'Violin' },
+  { number: 46, name: 'Harp' },
+  { number: 52, name: 'Choir Aahs' },
+  { number: 56, name: 'Trumpet' },
+  { number: 58, name: 'Tuba' },
+  { number: 63, name: 'Synth Brass 1' },
+  { number: 73, name: 'Flute' },
+  { number: 74, name: 'Recorder' },
+  { number: 82, name: 'Lead 3 (Calliope)' }
+];
+
 const DEFAULT_VELOCITY = 0.75;
 
 export class SoundFontEngine {
@@ -14,6 +30,7 @@ export class SoundFontEngine {
     this.instrumentMap = new Map();
     this.activeVoices = new Map(); // animalId -> Map<midiNote, {osc, gain}>
     this.soundFontData = null;
+    this.programs = GENERAL_MIDI_PROGRAMS;
   }
 
   getAudioContext() {
@@ -41,6 +58,16 @@ export class SoundFontEngine {
 
   setInstrumentForAnimal(animalId, programNumber) {
     this.instrumentMap.set(animalId, programNumber);
+  }
+
+  getProgramList() {
+    return this.programs;
+  }
+
+  getProgramName(programNumber) {
+    if (typeof programNumber !== 'number') return null;
+    const hit = this.programs.find((program) => program.number === programNumber);
+    return hit ? hit.name : null;
   }
 
   noteOnForAnimal(animalId, midiNote, velocity = DEFAULT_VELOCITY, time) {

@@ -9,6 +9,8 @@ export const SCALE_OFFSETS_12TET = {
   chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 };
 
+const PENTATONIC_OFFSETS = [0, 2, 4, 7, 9];
+
 export class TheoryEngine {
   constructor(scaleOffsets = SCALE_OFFSETS_12TET) {
     this.scaleOffsets = scaleOffsets;
@@ -27,10 +29,30 @@ export class TheoryEngine {
     const idx = Math.max(0, (degree ?? 1) - 1);
     const octaveOffset = Math.floor(idx / scale.length) * 12;
     const scaleOffset = scale[idx % scale.length];
-    return root + scaleOffset + octaveOffset;
+    const rawNote = root + scaleOffset + octaveOffset;
+    return this.snapToPentatonic(root, rawNote);
   }
 
   scaleDegreesToMidiNotes(profile, degrees = []) {
     return degrees.map((deg) => this.degreeToMidi(profile, deg));
+  }
+
+  snapToPentatonic(root, midiNote) {
+    const relative = midiNote - root;
+    const octave = Math.floor(relative / 12);
+    const offset = ((relative % 12) + 12) % 12;
+
+    let closest = PENTATONIC_OFFSETS[0];
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const candidate of PENTATONIC_OFFSETS) {
+      const distance = Math.abs(candidate - offset);
+      if (distance < bestDistance) {
+        closest = candidate;
+        bestDistance = distance;
+      }
+    }
+
+    return root + octave * 12 + closest;
   }
 }
