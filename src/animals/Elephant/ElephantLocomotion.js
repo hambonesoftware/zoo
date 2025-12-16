@@ -439,6 +439,7 @@ export class ElephantLocomotion {
     const strideLength = this._getStrideLength() * this.walkBlend;
     const limbId = this._legKeyToLimbId(legKey);
     const phaseTime = strideDuration * phase;
+    const timestamp = this._time + phaseTime;
 
     const payload = {
       animalId: this.elephant?.id || 'elephant',
@@ -450,8 +451,15 @@ export class ElephantLocomotion {
       gait: this.state,
       strideSpeed,
       swingDuration,
+      strideLength,
       timestamp
-    });
+    };
+
+    if (this._footfallListener) {
+      this._footfallListener(payload);
+    }
+
+    this._footstepListeners.forEach((handler) => handler(payload));
   }
 
   _legKeyToLimbId(legKey) {

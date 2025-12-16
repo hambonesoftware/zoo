@@ -312,7 +312,7 @@ class App {
       onInstrumentChange: (programNumber) => this.setInstrumentSelection(this.currentAnimalType, programNumber),
       programOptions: this.programOptions,
       defaultProgram: this.getInstrumentSelection(defaultAnimalType),
-      defaultProgramName: this.getDefaultProgramLabel(defaultAnimalType)
+      defaultProgramName: this.getDefaultProgramLabel(defaultAnimalType),
       onAudioSettingsChange: (change) => this.handleAudioSettingsChange(change)
     });
 
