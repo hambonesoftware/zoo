@@ -5,6 +5,7 @@ import { AnimalRegistry, getRegisteredAnimals } from './animals/AnimalRegistry.j
 import { SoundFontEngine } from './audio/SoundFontEngine.js';
 import { TheoryEngine } from './music/TheoryEngine.js';
 import { MusicEngine } from './music/MusicEngine.js';
+import { MIDI_CHANNEL_ASSIGNMENTS, getProfileForAnimal } from './music/MusicProfiles.js';
 import { NoteHighway } from './ui/NoteHighway.js';
 import { downloadAsJSON, downloadAsOBJ } from './debug/exporters.js';
 import { TuningPanel } from './ui/TuningPanel.js';
@@ -54,6 +55,9 @@ class App {
       theoryEngine: this.theoryEngine,
       noteHighway: this.noteHighway
     });
+    this.audioSettings = this.createDefaultAudioSettings();
+    this.instrumentOptions = this.getInstrumentOptions();
+    this.applyAudioRoutingDefaults();
     this.audioReady = false;
     this.setupAudioBootstrap();
 
@@ -97,6 +101,153 @@ class App {
     window.addEventListener('keydown', handler, { once: true });
   }
 
+  getInstrumentOptions() {
+    const baseOptions = [
+      { value: 0, label: 'Grand Piano (0)' },
+      { value: 11, label: 'Vibraphone (11)' },
+      { value: 24, label: 'Nylon Guitar (24)' },
+      { value: 58, label: 'Tuba / Bass (58)' },
+      { value: 74, label: 'Flute / Lead (74)' },
+      { value: 82, label: 'Synth Lead (82)' }
+    ];
+
+    const defaults = getRegisteredAnimals()
+      .map((animalId) => this.getDefaultInstrumentForAnimal(animalId))
+      .filter((program) => typeof program === 'number');
+
+    const seen = new Set(baseOptions.map((option) => option.value));
+    const options = [...baseOptions];
+    for (const program of defaults) {
+      if (seen.has(program)) continue;
+      seen.add(program);
+      options.push({ value: program, label: `Program ${program}` });
+    }
+
+    return options;
+  }
+
+  getDefaultInstrumentForAnimal(animalId) {
+    const profile = getProfileForAnimal(animalId);
+    if (profile && typeof profile.programNumber === 'number') {
+      return profile.programNumber;
+    }
+    return 0;
+  }
+
+  createDefaultAudioSettings() {
+    const settings = {
+      masterVolume: 1,
+      masterMuted: false,
+      footstepsEnabled: true,
+      instrumentByAnimal: {},
+      animalVolume: {},
+      animalMuted: {}
+    };
+
+    for (const animalId of getRegisteredAnimals()) {
+      settings.instrumentByAnimal[animalId] = this.getDefaultInstrumentForAnimal(animalId);
+      settings.animalVolume[animalId] = 1;
+      settings.animalMuted[animalId] = false;
+    }
+
+    return settings;
+  }
+
+  applyAudioRoutingDefaults() {
+    for (const animalId of getRegisteredAnimals()) {
+      const channel = MIDI_CHANNEL_ASSIGNMENTS[animalId];
+      if (typeof channel === 'number') {
+        this.soundFontEngine.assignChannelForAnimal(animalId, channel);
+      }
+      this.applyAudioForAnimal(animalId);
+    }
+    this.applyMasterAudioSettings();
+    this.musicEngine.setFootstepsEnabled(this.audioSettings.footstepsEnabled);
+  }
+
+  ensureAudioDefaultsForAnimal(animalId) {
+    if (!Object.prototype.hasOwnProperty.call(this.audioSettings.instrumentByAnimal, animalId)) {
+      this.audioSettings.instrumentByAnimal[animalId] = this.getDefaultInstrumentForAnimal(animalId);
+    }
+    if (!Object.prototype.hasOwnProperty.call(this.audioSettings.animalVolume, animalId)) {
+      this.audioSettings.animalVolume[animalId] = 1;
+    }
+    if (!Object.prototype.hasOwnProperty.call(this.audioSettings.animalMuted, animalId)) {
+      this.audioSettings.animalMuted[animalId] = false;
+    }
+  }
+
+  applyMasterAudioSettings() {
+    this.soundFontEngine.setMasterVolume(this.audioSettings.masterVolume);
+    this.soundFontEngine.setMasterMute(this.audioSettings.masterMuted);
+  }
+
+  applyAudioForAnimal(animalId) {
+    if (!animalId) return;
+    this.ensureAudioDefaultsForAnimal(animalId);
+    const instrument = this.audioSettings.instrumentByAnimal[animalId];
+    const volume = this.audioSettings.animalVolume[animalId];
+    const muted = this.audioSettings.animalMuted[animalId];
+
+    if (typeof instrument === 'number') {
+      this.soundFontEngine.setInstrumentForAnimal(animalId, instrument);
+    }
+    this.soundFontEngine.setAnimalVolume(animalId, volume);
+    this.soundFontEngine.setAnimalMute(animalId, muted);
+  }
+
+  syncAudioPanel(animalType) {
+    if (!this.tuningPanel || !animalType) return;
+    this.ensureAudioDefaultsForAnimal(animalType);
+
+    this.tuningPanel.setAudioState({
+      instrumentProgram: this.audioSettings.instrumentByAnimal[animalType],
+      masterVolume: this.audioSettings.masterVolume,
+      masterMuted: this.audioSettings.masterMuted,
+      animalVolume: this.audioSettings.animalVolume[animalType],
+      animalMuted: this.audioSettings.animalMuted[animalType],
+      footstepsEnabled: this.audioSettings.footstepsEnabled,
+      instrumentOptions: this.instrumentOptions
+    });
+  }
+
+  handleAudioSettingsChange(change = {}) {
+    const animalId = this.currentAnimalType;
+    if (animalId) {
+      this.ensureAudioDefaultsForAnimal(animalId);
+    }
+
+    if (typeof change.instrumentProgram === 'number' && animalId) {
+      this.audioSettings.instrumentByAnimal[animalId] = change.instrumentProgram;
+      this.soundFontEngine.setInstrumentForAnimal(animalId, change.instrumentProgram);
+    }
+
+    if (typeof change.masterVolume === 'number') {
+      this.audioSettings.masterVolume = Math.min(Math.max(change.masterVolume, 0), 1);
+      this.applyMasterAudioSettings();
+    }
+
+    if (typeof change.masterMuted === 'boolean') {
+      this.audioSettings.masterMuted = change.masterMuted;
+      this.applyMasterAudioSettings();
+    }
+
+    if (typeof change.animalVolume === 'number' && animalId) {
+      this.audioSettings.animalVolume[animalId] = Math.min(Math.max(change.animalVolume, 0), 1);
+      this.soundFontEngine.setAnimalVolume(animalId, this.audioSettings.animalVolume[animalId]);
+    }
+
+    if (typeof change.animalMuted === 'boolean' && animalId) {
+      this.audioSettings.animalMuted[animalId] = change.animalMuted;
+      this.soundFontEngine.setAnimalMute(animalId, change.animalMuted);
+    }
+
+    if (typeof change.footstepsEnabled === 'boolean') {
+      this.audioSettings.footstepsEnabled = change.footstepsEnabled;
+      this.musicEngine.setFootstepsEnabled(change.footstepsEnabled);
+    }
+  }
+
   setupAnimalDropdown(defaultAnimalType) {
     const select = document.getElementById('animal-select');
     if (!select) return;
@@ -119,6 +270,8 @@ class App {
       this.currentAnimalType = type;
       this.world.setAnimalType(type);
       this.syncTuningPanel(type);
+      this.applyAudioForAnimal(type);
+      this.syncAudioPanel(type);
     });
 
     const frameBtn = document.getElementById('zoo-frame');
@@ -150,10 +303,12 @@ class App {
         this.applyPreset(values, meta);
       },
       onUndo: () => this.undoTuning(),
-      onRedo: () => this.redoTuning()
+      onRedo: () => this.redoTuning(),
+      onAudioSettingsChange: (change) => this.handleAudioSettingsChange(change)
     });
 
     this.syncTuningPanel(defaultAnimalType);
+    this.syncAudioPanel(defaultAnimalType);
   }
 
   syncTuningPanel(animalType) {
@@ -169,6 +324,7 @@ class App {
     this.currentTuning = { ...current };
     this.resetHistory(current);
     this.tuningPanel.setSchema(schema, current, animalType, defaults, this.schemaVersion);
+    this.syncAudioPanel(animalType);
   }
 
   handleTuningChange(change) {
