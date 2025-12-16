@@ -31,6 +31,10 @@ export class TuningPanel {
     onCameraReset,
     onUndo,
     onRedo,
+    onInstrumentChange,
+    programOptions = [],
+    defaultProgram = null,
+    defaultProgramName = 'Default instrument'
     onAudioSettingsChange
   } = {}) {
     this.onTuningChange = onTuningChange;
@@ -40,6 +44,7 @@ export class TuningPanel {
     this.onCameraReset = onCameraReset;
     this.onUndo = onUndo;
     this.onRedo = onRedo;
+    this.onInstrumentChange = onInstrumentChange;
     this.onAudioSettingsChange = onAudioSettingsChange;
 
     this.schema = {};
@@ -52,6 +57,9 @@ export class TuningPanel {
     this.searchQuery = '';
     this.showAdvanced = false;
     this.tierFilter = 'all';
+    this.programOptions = programOptions || [];
+    this.selectedProgram = typeof defaultProgram === 'number' ? defaultProgram : null;
+    this.defaultProgramName = defaultProgramName;
     this.instrumentOptions = [];
 
     this.panelWidth = this.readStoredWidth();
@@ -76,16 +84,12 @@ export class TuningPanel {
     this.undoButton = this.root.querySelector('#zoo-tuning-undo');
     this.redoButton = this.root.querySelector('#zoo-tuning-redo');
     this.deletePresetButton = this.root.querySelector('#zoo-tuning-delete');
-    this.instrumentSelect = this.root.querySelector('#zoo-audio-instrument');
-    this.masterVolumeSlider = this.root.querySelector('#zoo-audio-master-volume');
-    this.masterMuteToggle = this.root.querySelector('#zoo-audio-master-mute');
-    this.animalVolumeSlider = this.root.querySelector('#zoo-audio-animal-volume');
-    this.animalMuteToggle = this.root.querySelector('#zoo-audio-animal-mute');
-    this.footstepToggle = this.root.querySelector('#zoo-audio-footsteps');
+    this.instrumentSelect = this.root.querySelector('#zoo-tuning-instrument');
 
     this.attachEventListeners();
     this.updateResponsiveMode();
     this.applyCollapsedState();
+    this.setInstrumentOptions(this.programOptions, this.selectedProgram, this.defaultProgramName);
   }
 
   attachEventListeners() {
@@ -372,6 +376,11 @@ export class TuningPanel {
     this.schemaVersion = schemaVersion || '1.0.0';
     this.defaults = { ...defaults };
     this.values = { ...this.defaults, ...values };
+    const audioOptions = audioConfig || {};
+    this.programOptions = audioOptions.programOptions || this.programOptions;
+    this.selectedProgram =
+      typeof audioOptions.selectedProgram === 'number' ? audioOptions.selectedProgram : null;
+    this.defaultProgramName = audioOptions.defaultProgramName || this.defaultProgramName;
     this.setRebuilding(false);
     this.refreshPresetOptions();
 
@@ -381,6 +390,8 @@ export class TuningPanel {
     if (this.tierFilterSelect) {
       this.tierFilterSelect.value = this.tierFilter;
     }
+
+    this.setInstrumentOptions(this.programOptions, this.selectedProgram, this.defaultProgramName);
 
     this.groupEntries = Object.entries(this.schema).map(([key, meta = {}]) => {
       const label = meta.label || key;
@@ -396,6 +407,37 @@ export class TuningPanel {
     });
 
     this.renderFields();
+  }
+
+  setInstrumentOptions(programs = [], selectedProgram = null, defaultProgramName = 'Default instrument') {
+    this.programOptions = Array.isArray(programs) ? programs : [];
+    this.selectedProgram = typeof selectedProgram === 'number' ? selectedProgram : null;
+    this.defaultProgramName = defaultProgramName || 'Default instrument';
+
+    if (!this.instrumentSelect) return;
+
+    this.instrumentSelect.innerHTML = '';
+
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = this.defaultProgramName;
+    this.instrumentSelect.appendChild(defaultOption);
+
+    for (const program of this.programOptions) {
+      const option = document.createElement('option');
+      option.value = program.number;
+      option.textContent = program.name
+        ? `${program.name} (${program.number})`
+        : `Program ${program.number}`;
+      if (this.selectedProgram === program.number) {
+        option.selected = true;
+      }
+      this.instrumentSelect.appendChild(option);
+    }
+
+    if (this.selectedProgram === null) {
+      this.instrumentSelect.value = '';
+    }
   }
 
   setValues(values = {}) {

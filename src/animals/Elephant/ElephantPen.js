@@ -14,6 +14,8 @@ export class ElephantPen {
     this.scene = scene;
     this.options = options;
     this.label = 'Elephant';
+    this.instrumentProgram =
+      typeof options.instrumentProgram === 'number' ? options.instrumentProgram : null;
 
     this.pen = new AnimalStudioPen(scene, {
       radius: options.radius || 3.5,
@@ -53,6 +55,10 @@ export class ElephantPen {
     }
 
     this.Elephant = new ElephantCreature(creatureOptions);
+
+    if (this.instrumentProgram !== null && this.Elephant.behavior?.setInstrumentProgram) {
+      this.Elephant.behavior.setInstrumentProgram(this.instrumentProgram);
+    }
 
     this.Elephant.position.set(0, this.pen.padHeight + 1.2, 0);
     this.Elephant.rotation.y =
@@ -108,5 +114,12 @@ export class ElephantPen {
 
   update(dt) {
     this.pen.update(dt);
+  }
+
+  setInstrumentProgram(programNumber) {
+    this.instrumentProgram = typeof programNumber === 'number' ? programNumber : null;
+    if (this.Elephant?.behavior?.setInstrumentProgram) {
+      this.Elephant.behavior.setInstrumentProgram(this.instrumentProgram);
+    }
   }
 }

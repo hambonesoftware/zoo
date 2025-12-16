@@ -21,6 +21,8 @@ export class ElephantBehavior {
     this.skeleton = skeleton;
     this.mesh = mesh;
     this.time = 0;
+    this.instrumentProgram =
+      typeof opts.instrumentProgram === 'number' ? opts.instrumentProgram : null;
     this.soundFontEngine = opts.soundFontEngine || null;
 
     // Environment config (enclosure/pond). Passed in from ElephantPen.
@@ -91,6 +93,10 @@ export class ElephantBehavior {
     };
   }
 
+  setInstrumentProgram(programNumber) {
+    this.instrumentProgram = typeof programNumber === 'number' ? programNumber : null;
+  }
+
   /**
    * Configure environment data such as enclosure radius and pond location.
    * Propagates to locomotion and defaults the elephant into a wandering state
@@ -144,7 +150,8 @@ export class ElephantBehavior {
     return {
       state: this.state,
       time: this.time,
-      locomotionState: this.locomotion ? this.locomotion.state : null
+      locomotionState: this.locomotion ? this.locomotion.state : null,
+      instrumentProgram: this.instrumentProgram
     };
   }
 

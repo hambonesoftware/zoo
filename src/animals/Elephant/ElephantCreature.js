@@ -42,6 +42,10 @@ export class ElephantCreature extends THREE.Group {
     this.mesh = mesh;
     this.behavior = behavior; // Behaviour drives idle motions, etc.
 
+    if (this.behavior && typeof this.behavior.setInstrumentProgram === 'function') {
+      this.behavior.setInstrumentProgram(options.instrumentProgram);
+    }
+
     // Parent the skeleton under the skinned mesh so any creature-level
     // transforms (position/rotation/scale) apply equally to both the mesh and
     // the bones. This prevents the skeleton helper from drifting relative to

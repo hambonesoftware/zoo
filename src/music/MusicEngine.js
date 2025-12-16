@@ -16,7 +16,7 @@ export class MusicEngine {
     this.theoryEngine = theoryEngine;
     this.noteHighway = noteHighway;
     this.lookaheadSeconds = lookaheadSeconds;
-    this.animalBrains = null;
+    this.animalBrains = new Map();
     this.footfallQueue = [];
     this.footfallCallback = null;
     this.footstepsEnabled = true;
