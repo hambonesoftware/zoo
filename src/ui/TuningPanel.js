@@ -34,7 +34,7 @@ export class TuningPanel {
     onInstrumentChange,
     programOptions = [],
     defaultProgram = null,
-    defaultProgramName = 'Default instrument'
+    defaultProgramName = 'Default instrument',
     onAudioSettingsChange
   } = {}) {
     this.onTuningChange = onTuningChange;
@@ -84,7 +84,12 @@ export class TuningPanel {
     this.undoButton = this.root.querySelector('#zoo-tuning-undo');
     this.redoButton = this.root.querySelector('#zoo-tuning-redo');
     this.deletePresetButton = this.root.querySelector('#zoo-tuning-delete');
-    this.instrumentSelect = this.root.querySelector('#zoo-tuning-instrument');
+    this.instrumentSelect = this.root.querySelector('#zoo-audio-instrument');
+    this.masterVolumeSlider = this.root.querySelector('#zoo-audio-master-volume');
+    this.masterMuteToggle = this.root.querySelector('#zoo-audio-master-mute');
+    this.animalVolumeSlider = this.root.querySelector('#zoo-audio-animal-volume');
+    this.animalMuteToggle = this.root.querySelector('#zoo-audio-animal-mute');
+    this.footstepToggle = this.root.querySelector('#zoo-audio-footsteps');
 
     this.attachEventListeners();
     this.updateResponsiveMode();
@@ -318,19 +323,6 @@ export class TuningPanel {
     return panel;
   }
 
-  setInstrumentOptions(options = []) {
-    this.instrumentOptions = [...options];
-    if (!this.instrumentSelect) return;
-
-    this.instrumentSelect.innerHTML = '';
-    for (const option of this.instrumentOptions) {
-      const el = document.createElement('option');
-      el.value = `${option.value}`;
-      el.textContent = option.label || option.value;
-      this.instrumentSelect.appendChild(el);
-    }
-  }
-
   setAudioState({
     instrumentProgram,
     masterVolume = 1,
@@ -370,7 +362,14 @@ export class TuningPanel {
     }
   }
 
-  setSchema(schema = {}, values = {}, animalId = null, defaults = {}, schemaVersion = '1.0.0') {
+  setSchema(
+    schema = {},
+    values = {},
+    animalId = null,
+    defaults = {},
+    schemaVersion = '1.0.0',
+    audioConfig = {}
+  ) {
     this.currentAnimalId = animalId ?? this.currentAnimalId;
     this.schema = schema || {};
     this.schemaVersion = schemaVersion || '1.0.0';
