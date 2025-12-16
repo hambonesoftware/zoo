@@ -430,6 +430,11 @@ export class ElephantLocomotion {
     const strideSpeed = this._gaitFrequency;
     const limbId = this._legKeyToLimbId(legKey);
 
+    const timestamp =
+      this.elephant && typeof this.elephant._getAudioTime === 'function'
+        ? this.elephant._getAudioTime()
+        : undefined;
+
     this._footfallListener({
       animalId: this.elephant?.id || 'elephant',
       limbId,
@@ -437,7 +442,8 @@ export class ElephantLocomotion {
       audioHintTime: 0,
       gait: this.state,
       strideSpeed,
-      swingDuration
+      swingDuration,
+      timestamp
     });
   }
 
