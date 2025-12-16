@@ -101,6 +101,7 @@ export class ElephantLocomotion {
     this._idleTime = 0;
 
     this._footfallListener = null;
+    this._footstepListeners = new Set();
     this._legSwingState = {};
 
     // Gait parameters
@@ -424,21 +425,40 @@ export class ElephantLocomotion {
     this._footfallListener = typeof listener === 'function' ? listener : null;
   }
 
+  onFootstep(listener) {
+    if (typeof listener !== 'function') return () => {};
+    this._footstepListeners.add(listener);
+    return () => {
+      this._footstepListeners.delete(listener);
+    };
+  }
+
   _emitFootfall(legKey, phase, swingDuration) {
-    if (!this._footfallListener) return;
-
     const strideSpeed = this._gaitFrequency;
+    const strideDuration = strideSpeed > 0 ? 1 / strideSpeed : 0;
+    const strideLength = this._getStrideLength() * this.walkBlend;
     const limbId = this._legKeyToLimbId(legKey);
+    const phaseTime = strideDuration * phase;
 
-    this._footfallListener({
+    const payload = {
       animalId: this.elephant?.id || 'elephant',
+      legId: legKey,
       limbId,
       phase,
+      phaseTime,
       audioHintTime: 0,
       gait: this.state,
       strideSpeed,
+      strideDuration,
+      strideLength,
       swingDuration
-    });
+    };
+
+    if (this._footfallListener) {
+      this._footfallListener(payload);
+    }
+
+    this._footstepListeners.forEach((listener) => listener(payload));
   }
 
   _legKeyToLimbId(legKey) {

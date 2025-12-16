@@ -37,6 +37,11 @@ export class ElephantBehavior {
     // Locomotion controller: expects an object with { bones, mesh, setState? }
     this.locomotion = new ElephantLocomotion(this);
 
+    this._footfallListener = null;
+    this._footstepHandlers = new Set();
+    this._locomotionFootstepUnsub = null;
+    this._bindFootstepRelay();
+
     // Optional debug flag (for future HUD/overlays)
     this.debug = {
       enabled: !!opts.debug
@@ -44,9 +49,29 @@ export class ElephantBehavior {
   }
 
   setFootfallListener(listener) {
-    if (this.locomotion && typeof this.locomotion.setFootfallListener === 'function') {
-      this.locomotion.setFootfallListener(listener);
-    }
+    this._footfallListener = typeof listener === 'function' ? listener : null;
+  }
+
+  _bindFootstepRelay() {
+    if (this._locomotionFootstepUnsub) return;
+    if (!this.locomotion || typeof this.locomotion.onFootstep !== 'function') return;
+
+    this._locomotionFootstepUnsub = this.locomotion.onFootstep((evt) => {
+      if (this._footfallListener) {
+        this._footfallListener(evt);
+      }
+
+      this._footstepHandlers.forEach((handler) => handler(evt));
+    });
+  }
+
+  onFootstep(listener) {
+    if (typeof listener !== 'function') return () => {};
+    this._footstepHandlers.add(listener);
+    this._bindFootstepRelay();
+    return () => {
+      this._footstepHandlers.delete(listener);
+    };
   }
 
   /**
