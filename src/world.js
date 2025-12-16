@@ -47,7 +47,10 @@ function createCanvas(canvasContainer) {
   return canvas;
 }
 
-export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnimal = 'cat' } = {}) {
+export function createWorld(
+  canvasContainer,
+  { preferWebGPU = true, defaultAnimal = 'cat', onAnimalConstructed = null } = {}
+) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xe8ecef);
 
@@ -161,6 +164,7 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
     activeAnimalId = animalId;
     activeModule = module;
     pen.mountAnimal(instance);
+    onAnimalConstructed?.(instance, { animalId });
     return instance;
   }
 
@@ -189,6 +193,7 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
         if (rebuilt) {
           activeAnimal = rebuilt;
           pen.mountAnimal(rebuilt);
+          onAnimalConstructed?.(rebuilt, { animalId: activeAnimalId });
         }
       } else if (typeof activeModule.applyTuning === 'function') {
         activeModule.applyTuning(activeAnimal, currentTuning);

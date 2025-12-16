@@ -45,6 +45,31 @@ export class MusicEngine {
     }
   }
 
+  handleFootfallEvent(event = {}) {
+    if (!event || !this.soundFontEngine) return;
+
+    const audioCtx = this.soundFontEngine.getAudioContext?.();
+    const startTime =
+      typeof event.audioTime === 'number'
+        ? event.audioTime
+        : audioCtx?.currentTime ?? 0;
+    const duration = typeof event.duration === 'number' ? event.duration : 0.2;
+    const velocity = typeof event.velocity === 'number' ? event.velocity : 0.85;
+
+    if (typeof event.midiNote !== 'number') return;
+
+    const musicEvent = createMusicEvent({
+      animalId: event.animalId,
+      midiNote: event.midiNote,
+      velocity,
+      startTime,
+      duration,
+      source: event.source || 'footfall'
+    });
+
+    this.scheduleEvent(musicEvent);
+  }
+
   scheduleEvent(event) {
     this.soundFontEngine.noteOnForAnimal(
       event.animalId,
