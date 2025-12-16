@@ -73,6 +73,7 @@ export class SoundFontEngine {
     if (typeof programNumber !== 'number') return null;
     const hit = this.programs.find((program) => program.number === programNumber);
     return hit ? hit.name : null;
+  }
   setMasterVolume(volume) {
     this.masterVolume = this.clampVolume(volume);
     this.updateAllVoiceGains();
@@ -192,6 +193,7 @@ export class SoundFontEngine {
       voice.gain.gain.cancelScheduledValues(now);
       voice.gain.gain.setValueAtTime(amplitude, now);
     }
+  }
   playStepNote(instrument, midiNote, velocity = DEFAULT_VELOCITY, time, duration = DEFAULT_STEP_DURATION) {
     const ctx = this.getAudioContext();
     const startTime = typeof time === 'number' ? time : ctx.currentTime;
