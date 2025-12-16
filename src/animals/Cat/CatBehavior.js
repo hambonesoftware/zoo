@@ -40,6 +40,12 @@ export class CatBehavior {
     };
   }
 
+  setFootfallListener(listener) {
+    if (this.locomotion && typeof this.locomotion.setFootfallListener === 'function') {
+      this.locomotion.setFootfallListener(listener);
+    }
+  }
+
   /**
    * Called by CatLocomotion or external systems when its internal state changes.
    * Allows the studio UI to show a simple "top level" state.
