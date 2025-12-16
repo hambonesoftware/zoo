@@ -4,8 +4,6 @@ import { createWorld } from './world.js';
 import { AnimalRegistry, getRegisteredAnimals } from './animals/AnimalRegistry.js';
 import { SoundFontEngine } from './audio/SoundFontEngine.js';
 import { TheoryEngine } from './music/TheoryEngine.js';
-import { AnimalMusicBrain } from './music/AnimalMusicBrain.js';
-import { MIDI_CHANNEL_ASSIGNMENTS, MUSIC_PROFILES, getProfileForAnimal } from './music/MusicProfiles.js';
 import { MusicEngine } from './music/MusicEngine.js';
 import { NoteHighway } from './ui/NoteHighway.js';
 import { downloadAsJSON, downloadAsOBJ } from './debug/exporters.js';
@@ -85,7 +83,6 @@ class App {
       try {
         await this.soundFontEngine.resumeContext();
         await this.soundFontEngine.loadSoundFont('/audio/general.sf2');
-        this.configureMusicBrains();
         this.audioReady = true;
 
         // Expose for quick console testing
@@ -98,24 +95,6 @@ class App {
 
     window.addEventListener('pointerdown', handler, { once: true });
     window.addEventListener('keydown', handler, { once: true });
-  }
-
-  configureMusicBrains() {
-    const animals = ['cat', 'elephant', 'giraffe', 'snake'];
-
-    for (const animal of animals) {
-      const profile = getProfileForAnimal(animal) || MUSIC_PROFILES[`${animal[0].toUpperCase()}${animal.slice(1)}Creature`];
-      if (!profile) continue;
-
-      const brain = new AnimalMusicBrain(profile);
-      this.musicEngine.registerAnimalBrain(animal, brain);
-
-      const channel = MIDI_CHANNEL_ASSIGNMENTS[animal];
-      if (typeof channel === 'number') {
-        this.soundFontEngine.assignChannelForAnimal(animal, channel);
-      }
-      this.soundFontEngine.setInstrumentForAnimal(animal, profile.programNumber);
-    }
   }
 
   setupAnimalDropdown(defaultAnimalType) {
