@@ -7,6 +7,7 @@
 import { audioContextManager } from './AudioContextManager.js';
 
 const DEFAULT_VELOCITY = 0.75;
+const DEFAULT_STEP_DURATION = 0.32;
 
 export class SoundFontEngine {
   constructor() {
@@ -97,5 +98,24 @@ export class SoundFontEngine {
     if (typeof programNumber !== 'number') return 'sine';
     const waveforms = ['sine', 'triangle', 'sawtooth', 'square'];
     return waveforms[Math.abs(programNumber) % waveforms.length];
+  }
+
+  playStepNote(instrument, midiNote, velocity = DEFAULT_VELOCITY, time, duration = DEFAULT_STEP_DURATION) {
+    const ctx = this.getAudioContext();
+    const startTime = typeof time === 'number' ? time : ctx.currentTime;
+    const stopTime = startTime + Math.max(0.05, duration);
+
+    const instrumentId =
+      (instrument && typeof instrument === 'object' && instrument.id) ||
+      (typeof instrument === 'string' ? instrument : 'step');
+
+    if (typeof instrument === 'number') {
+      this.setInstrumentForAnimal(instrumentId, instrument);
+    } else if (instrument && typeof instrument === 'object' && typeof instrument.program === 'number') {
+      this.setInstrumentForAnimal(instrumentId, instrument.program);
+    }
+
+    this.noteOnForAnimal(instrumentId, midiNote, velocity, startTime);
+    this.noteOffForAnimal(instrumentId, midiNote, stopTime);
   }
 }

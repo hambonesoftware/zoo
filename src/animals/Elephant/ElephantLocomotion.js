@@ -449,16 +449,9 @@ export class ElephantLocomotion {
       audioHintTime: 0,
       gait: this.state,
       strideSpeed,
-      strideDuration,
-      strideLength,
-      swingDuration
-    };
-
-    if (this._footfallListener) {
-      this._footfallListener(payload);
-    }
-
-    this._footstepListeners.forEach((listener) => listener(payload));
+      swingDuration,
+      timestamp
+    });
   }
 
   _legKeyToLimbId(legKey) {
