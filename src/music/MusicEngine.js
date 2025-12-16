@@ -9,13 +9,13 @@ export class MusicEngine {
     this.theoryEngine = theoryEngine;
     this.noteHighway = noteHighway;
     this.lookaheadSeconds = lookaheadSeconds;
-    this.animalBrains = new Map();
+    this.animalBrains = null;
     this.footfallQueue = [];
     this.footfallCallback = null;
   }
 
   registerAnimalBrain(animalId, brain) {
-    this.animalBrains.set(animalId, brain);
+    this.animalBrains?.set?.(animalId, brain);
   }
 
   registerFootfallCallback(callback) {
@@ -35,31 +35,6 @@ export class MusicEngine {
     if (!this.soundFontEngine || !this.theoryEngine) return;
 
     this.consumeFootfallQueue(audioTime);
-
-    for (const [animalId, brain] of this.animalBrains.entries()) {
-      const result = brain.updateGuidedStep(audioTime);
-      if (!result.advanced) continue;
-
-      const degrees = brain.guided.allowedDegreesNow;
-      const midiNotes = this.theoryEngine.scaleDegreesToMidiNotes(brain.profile, degrees);
-
-      for (const midiNote of midiNotes) {
-        const startTime = audioTime + this.lookaheadSeconds;
-        const duration = brain.getSecondsPerBeat() * 0.9;
-        const velocity = 0.85;
-
-        const event = createMusicEvent({
-          animalId,
-          midiNote,
-          velocity,
-          startTime,
-          duration,
-          source: 'guided'
-        });
-
-        this.scheduleEvent(event);
-      }
-    }
   }
 
   consumeFootfallQueue(audioTime) {
@@ -80,7 +55,7 @@ export class MusicEngine {
   transformFootfallToEvent(footfall, audioTime) {
     if (!footfall || !footfall.animalId) return null;
 
-    const brain = this.animalBrains.get(footfall.animalId);
+    const brain = this.animalBrains?.get?.(footfall.animalId);
     const profile = brain?.profile;
     const midiNote = this.resolveMidiNote(footfall, profile);
     if (typeof midiNote !== 'number') return null;
