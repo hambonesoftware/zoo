@@ -562,7 +562,7 @@ export class ElephantGenerator {
     mesh.receiveShadow = true;
     mesh.bind(skeleton);
 
-    const behavior = new ElephantBehavior(skeleton, mesh);
+    const behavior = new ElephantBehavior(skeleton, mesh, options);
 
     return { mesh, behavior };
   }

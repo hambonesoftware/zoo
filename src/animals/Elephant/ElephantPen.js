@@ -42,7 +42,10 @@ export class ElephantPen {
       debug: !!options.debugElephant,
       showSkeleton: options.showSkeleton,
       bodyColor: options.bodyColor,
-      variantSeed: options.variantSeed
+      variantSeed: options.variantSeed,
+      soundFontEngine: options.soundFontEngine,
+      stepInstrument: options.elephantInstrument || options.stepInstrument,
+      baseMidiNote: options.elephantBaseMidiNote || options.baseMidiNote
     };
 
     if (lowPolyOption !== undefined) {
