@@ -1,8 +1,8 @@
 // src/animals/Giraffe/GiraffeGenerator.js
 
 import * as THREE from 'three';
-import { generateTorsoGeometry } from '../bodyParts/TorsoGenerator.js';
-import { generateNeckGeometry } from '../bodyParts/NeckGenerator.js';
+// Torso + neck as one continuous body
+import { generateSpineTorsoGeometry } from '../bodyParts/SpineTorsoGenerator.js';
 import { generateTailGeometry } from '../bodyParts/TailGenerator.js';
 import { generateLimbGeometry } from '../bodyParts/LimbGenerator.js';
 import { mergeGeometries } from '../../libs/BufferGeometryUtils.js';
@@ -10,9 +10,11 @@ import { createGiraffeSkinMaterial } from './GiraffeSkinNode.js';
 
 export class GiraffeGenerator {
   static generate(skeleton, options = {}) {
+    // Make sure bone world matrices are fresh
     skeleton.bones.forEach((bone) => bone.updateMatrixWorld(true));
 
-    const findBoneIndex = (name) => skeleton.bones.findIndex((b) => b.name === name);
+    const findBoneIndex = (name) =>
+      skeleton.bones.findIndex((b) => b.name === name);
 
     const ensureSkinnedGeometry = (geometry, boneName) => {
       let geo = geometry.index ? geometry.toNonIndexed() : geometry;
@@ -35,6 +37,7 @@ export class GiraffeGenerator {
 
       const targetBone = findBoneIndex(boneName);
       const boneIndex = targetBone >= 0 ? targetBone : 0;
+
       if (!geo.getAttribute('skinIndex') || !geo.getAttribute('skinWeight')) {
         const skinIndices = new Uint16Array(vertexCount * 4);
         const skinWeights = new Float32Array(vertexCount * 4);
@@ -42,8 +45,14 @@ export class GiraffeGenerator {
           skinIndices[i * 4] = boneIndex;
           skinWeights[i * 4] = 1.0;
         }
-        geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
-        geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+        geo.setAttribute(
+          'skinIndex',
+          new THREE.Uint16BufferAttribute(skinIndices, 4)
+        );
+        geo.setAttribute(
+          'skinWeight',
+          new THREE.Float32BufferAttribute(skinWeights, 4)
+        );
       }
 
       return geo;
@@ -54,46 +63,45 @@ export class GiraffeGenerator {
       return bone ? new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld) : null;
     };
 
+    // Variant noise
     const seed = typeof options.variantSeed === 'number' ? options.variantSeed : 0.5;
     const random01 = (s) => Math.abs(Math.sin(s * 43758.5453)) % 1;
     const variantFactor = random01(seed);
 
-    const neckScale = (1 + (variantFactor - 0.5) * 0.25) * (options.neckRadiusScale || 1); // ±12.5%
+    const neckScale =
+      (1 + (variantFactor - 0.5) * 0.25) * (options.neckRadiusScale || 1); // ±12.5%
     const headScale = 1 + (0.5 - variantFactor) * 0.1; // ±5%
-    const legScale = (1 + (variantFactor - 0.5) * 0.15) * (options.legRadiusScale || 1); // ±7.5%
-    const torsoScale = (1 + (variantFactor - 0.5) * 0.08) * (options.torsoRadiusScale || 1); // subtle ±4%
-    const neckBones = Array.isArray(options.neckBones) && options.neckBones.length > 0
-      ? options.neckBones
-      : ['neck_0', 'neck_1', 'neck_2', 'neck_3', 'neck_4', 'neck_5', 'neck_6'];
+    const legScale =
+      (1 + (variantFactor - 0.5) * 0.15) * (options.legRadiusScale || 1); // ±7.5%
+    const torsoScale =
+      (1 + (variantFactor - 0.5) * 0.08) * (options.torsoRadiusScale || 1); // ±4%
+
+    const neckBones =
+      Array.isArray(options.neckBones) && options.neckBones.length > 0
+        ? options.neckBones
+        : ['neck_0', 'neck_1', 'neck_2', 'neck_3', 'neck_4', 'neck_5', 'neck_6'];
+
     const neckTipName = neckBones[neckBones.length - 1] || 'neck_6';
-    const neckBlendBone = options.neckBone || (neckBones.length > 1 ? neckBones[neckBones.length - 2] : neckTipName);
+    const neckBlendBone =
+      options.neckBone ||
+      (neckBones.length > 1 ? neckBones[neckBones.length - 2] : neckTipName);
 
     const lowPoly = options.lowPoly === true;
     const lowPolySides = options.sides || (lowPoly ? 10 : 18);
     const ringsPerSegment = Math.max(1, options.ringsPerSegment || 2);
-    const neckRingsPerSegment = Math.max(3, options.neckRingsPerSegment || ringsPerSegment);
-
-    // === 1. Torso ===
-    const torsoGeometry = ensureSkinnedGeometry(
-      generateTorsoGeometry(skeleton, {
-        bones: ['spine_base', 'spine_mid', 'spine_upper'],
-        radii: [0.62 * torsoScale, 0.7 * torsoScale, 0.55 * torsoScale],
-        sides: lowPolySides,
-        ringsPerSegment,
-        extendRumpToRearLegs: true
-      }),
-      'spine_base'
+    const neckRingsPerSegment = Math.max(
+      3,
+      options.neckRingsPerSegment || ringsPerSegment
     );
 
-    // === 2. Neck ===
-    const neckGeometry = ensureSkinnedGeometry(
-      generateNeckGeometry(skeleton, {
-        bones: neckBones,
-        headBone: 'head',
-        neckTipBone: neckTipName,
-        sides: lowPolySides,
-        ringsPerSegment: neckRingsPerSegment,
-        radii: [
+    // === 1. Continuous Spine + Neck body ===
+    // One tube from spine_base → spine_mid → spine_upper → neck_0..neck_6
+    const spineNeckGeometry = ensureSkinnedGeometry(
+      generateSpineTorsoGeometry(skeleton, {
+        spineBones: ['spine_base', 'spine_mid', 'spine_upper'],
+        neckBones,
+        spineRadii: [0.62 * torsoScale, 0.7 * torsoScale, 0.55 * torsoScale],
+        neckRadii: [
           0.44 * neckScale,
           0.4 * neckScale,
           0.36 * neckScale,
@@ -102,41 +110,85 @@ export class GiraffeGenerator {
           0.24 * neckScale,
           0.2 * neckScale
         ],
-        capBase: true
+        sides: lowPolySides,
+        // Use neckRingsPerSegment so the whole spine+neck has nice resolution
+        ringsPerSegment: neckRingsPerSegment,
+        extendRumpToRearLegs: true,
+        // Close off the rear; leave the neck tip open so the head can attach
+        capStart: true,
+        capEnd: false
       }),
-      'neck_0'
+      'spine_base'
     );
 
-    // === 3. Head ===
+    // === 2. Head ===
     const neckTip = samplePosition(neckTipName);
     const headPos = samplePosition('head');
-    const headDir = headPos && neckTip ? headPos.clone().sub(neckTip) : new THREE.Vector3(0, 0, 1);
+
+    const headDir =
+      headPos && neckTip
+        ? headPos.clone().sub(neckTip)
+        : new THREE.Vector3(0, 0, 1);
     if (headDir.lengthSq() < 1e-6) headDir.set(0, 0, 1);
-    const headMid = neckTip && headPos ? neckTip.clone().lerp(headPos, 0.6) : new THREE.Vector3();
-    const headLength = headPos && neckTip ? neckTip.distanceTo(headPos) + 0.2 : 0.6;
-    let headGeometry;
+
+    const headMid =
+      neckTip && headPos ? neckTip.clone().lerp(headPos, 0.6) : new THREE.Vector3();
+    const headLength =
+      headPos && neckTip ? neckTip.distanceTo(headPos) + 0.2 : 0.6;
 
     const headDirNorm = headDir.clone().normalize();
-    const headQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), headDirNorm);
+    const headQuat = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      headDirNorm
+    );
 
     const muzzleLength = headLength * 0.55;
     const muzzleRadius = 0.12 * headScale;
-    const muzzle = new THREE.CapsuleGeometry(muzzleRadius, muzzleLength, lowPoly ? 4 : 6, lowPoly ? 6 : 12);
+
+    const muzzle = new THREE.CapsuleGeometry(
+      muzzleRadius,
+      muzzleLength,
+      lowPoly ? 4 : 6,
+      lowPoly ? 6 : 12
+    );
     muzzle.scale(0.9, 0.8, 1.0);
     muzzle.applyQuaternion(headQuat);
-    const muzzleBase = neckTip && headPos ? neckTip.clone().lerp(headPos, 0.35) : headMid.clone();
-    muzzle.translate(muzzleBase.x + headDirNorm.x * (muzzleLength * 0.35), muzzleBase.y + headDirNorm.y * (muzzleLength * 0.35), muzzleBase.z + headDirNorm.z * (muzzleLength * 0.35));
+
+    const muzzleBase =
+      neckTip && headPos
+        ? neckTip.clone().lerp(headPos, 0.35)
+        : headMid.clone();
+
+    muzzle.translate(
+      muzzleBase.x + headDirNorm.x * (muzzleLength * 0.35),
+      muzzleBase.y + headDirNorm.y * (muzzleLength * 0.35),
+      muzzleBase.z + headDirNorm.z * (muzzleLength * 0.35)
+    );
 
     const domeRadius = 0.24 * headScale;
-    const dome = new THREE.SphereGeometry(domeRadius, lowPoly ? 8 : 14, lowPoly ? 6 : 10, 0, Math.PI * 2, 0, Math.PI * 0.72);
+    const dome = new THREE.SphereGeometry(
+      domeRadius,
+      lowPoly ? 8 : 14,
+      lowPoly ? 6 : 10,
+      0,
+      Math.PI * 2,
+      0,
+      Math.PI * 0.72
+    );
     dome.scale(1.0, 0.92, 1.05);
     dome.applyQuaternion(headQuat);
-    const domeOffset = muzzleBase.clone().add(headDirNorm.clone().multiplyScalar(muzzleLength * 0.85));
+
+    const domeOffset = muzzleBase
+      .clone()
+      .add(headDirNorm.clone().multiplyScalar(muzzleLength * 0.85));
     dome.translate(domeOffset.x, domeOffset.y, domeOffset.z);
 
-    headGeometry = ensureSkinnedGeometry(mergeGeometries([muzzle, dome], false), 'head');
+    const headGeometry = ensureSkinnedGeometry(
+      mergeGeometries([muzzle, dome], false),
+      'head'
+    );
 
-    // === 4. Horns ===
+    // === 3. Horns ===
     const makeCurvedHorn = (boneName, radius, length, lateralCurve) => {
       const bonePos = samplePosition(boneName) || new THREE.Vector3();
       const base = bonePos.clone();
@@ -144,11 +196,28 @@ export class GiraffeGenerator {
       const control = bonePos
         .clone()
         .add(new THREE.Vector3(lateralCurve, length * 0.6, length * 0.08));
+
       const curve = new THREE.CatmullRomCurve3([base, control, tip]);
-      const tube = new THREE.TubeGeometry(curve, lowPoly ? 8 : 14, radius, lowPoly ? 6 : 10, false);
-      const capTop = new THREE.SphereGeometry(radius * 0.95, lowPoly ? 6 : 10, lowPoly ? 4 : 8);
+      const tube = new THREE.TubeGeometry(
+        curve,
+        lowPoly ? 8 : 14,
+        radius,
+        lowPoly ? 6 : 10,
+        false
+      );
+
+      const capTop = new THREE.SphereGeometry(
+        radius * 0.95,
+        lowPoly ? 6 : 10,
+        lowPoly ? 4 : 8
+      );
       capTop.translate(tip.x, tip.y, tip.z);
-      const capBase = new THREE.SphereGeometry(radius, lowPoly ? 6 : 10, lowPoly ? 4 : 8);
+
+      const capBase = new THREE.SphereGeometry(
+        radius,
+        lowPoly ? 6 : 10,
+        lowPoly ? 4 : 8
+      );
       capBase.translate(base.x, base.y, base.z);
 
       const hornGeometry = mergeGeometries([tube, capTop, capBase], false);
@@ -158,7 +227,7 @@ export class GiraffeGenerator {
     const hornLeft = makeCurvedHorn('horn_left', 0.05, 0.24, -0.05);
     const hornRight = makeCurvedHorn('horn_right', 0.05, 0.24, 0.05);
 
-    // === 5. Ears ===
+    // === 4. Ears ===
     const makeEar = (boneName, flip = 1) => {
       const bonePos = samplePosition(boneName) || new THREE.Vector3();
 
@@ -169,30 +238,60 @@ export class GiraffeGenerator {
       earShape.lineTo(-0.02, 0.12);
       earShape.closePath();
 
-      const earGeo = new THREE.ExtrudeGeometry(earShape, { depth: 0.045, bevelEnabled: false });
+      const earGeo = new THREE.ExtrudeGeometry(earShape, {
+        depth: 0.045,
+        bevelEnabled: false
+      });
+
       earGeo.translate(-0.08, -0.08, -0.0225);
       earGeo.scale(1, 1, 1 + (flip < 0 ? 0.05 : 0));
       earGeo.rotateZ(THREE.MathUtils.degToRad(10 * flip));
       earGeo.rotateX(THREE.MathUtils.degToRad(-8));
       earGeo.translate(bonePos.x, bonePos.y + 0.02, bonePos.z - 0.04);
+
       return ensureSkinnedGeometry(earGeo, boneName);
     };
 
     const earLeft = makeEar('ear_left', -1);
     const earRight = makeEar('ear_right', 1);
 
-    // === Neck / Head Blend ===
+    // === 5. Neck / Head Blend (optional) ===
+    // Default: OFF. Set options.enableNeckBlend = true to turn it back on.
     let neckBlendGeometry = null;
-    if (neckTip && headPos) {
+    const useNeckBlend = options.enableNeckBlend === true;
+
+    if (useNeckBlend && neckTip && headPos) {
       const blendLength = Math.max(0.08, headLength * 0.15);
       const radiusBottom = 0.18 * neckScale;
       const radiusTop = muzzleRadius * 0.9;
-      const blendCylinder = new THREE.CylinderGeometry(radiusTop, radiusBottom, blendLength, lowPoly ? 8 : 12, 1, false);
-      const blendQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), headDirNorm);
+
+      const blendCylinder = new THREE.CylinderGeometry(
+        radiusTop,
+        radiusBottom,
+        blendLength,
+        lowPoly ? 8 : 12,
+        1,
+        true // open-ended
+      );
+
+      const blendQuat = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        headDirNorm
+      );
       blendCylinder.applyQuaternion(blendQuat);
-      const blendStart = neckTip.clone();
+
+      const seamEps = 0.01;
+      const blendStart = neckTip
+        .clone()
+        .add(headDirNorm.clone().multiplyScalar(seamEps));
       const blendOffset = headDirNorm.clone().multiplyScalar(blendLength * 0.5);
-      blendCylinder.translate(blendStart.x + blendOffset.x, blendStart.y + blendOffset.y, blendStart.z + blendOffset.z);
+
+      blendCylinder.translate(
+        blendStart.x + blendOffset.x,
+        blendStart.y + blendOffset.y,
+        blendStart.z + blendOffset.z
+      );
+
       neckBlendGeometry = ensureSkinnedGeometry(blendCylinder, neckBlendBone);
     }
 
@@ -214,12 +313,27 @@ export class GiraffeGenerator {
       ringBias: 0.2
     };
 
-    const frontRadii = [0.26 * legScale, 0.22 * legScale, 0.18 * legScale, 0.16 * legScale];
-    const backRadii = [0.28 * legScale, 0.23 * legScale, 0.19 * legScale, 0.16 * legScale];
+    const frontRadii = [
+      0.26 * legScale,
+      0.22 * legScale,
+      0.18 * legScale,
+      0.16 * legScale
+    ];
+    const backRadii = [
+      0.28 * legScale,
+      0.23 * legScale,
+      0.19 * legScale,
+      0.16 * legScale
+    ];
 
     const fl = ensureSkinnedGeometry(
       generateLimbGeometry(skeleton, {
-        bones: ['front_left_shoulder', 'front_left_upper', 'front_left_lower', 'front_left_foot'],
+        bones: [
+          'front_left_shoulder',
+          'front_left_upper',
+          'front_left_lower',
+          'front_left_foot'
+        ],
         radii: frontRadii,
         ...limbOptions
       }),
@@ -228,7 +342,12 @@ export class GiraffeGenerator {
 
     const fr = ensureSkinnedGeometry(
       generateLimbGeometry(skeleton, {
-        bones: ['front_right_shoulder', 'front_right_upper', 'front_right_lower', 'front_right_foot'],
+        bones: [
+          'front_right_shoulder',
+          'front_right_upper',
+          'front_right_lower',
+          'front_right_foot'
+        ],
         radii: frontRadii,
         ...limbOptions
       }),
@@ -237,7 +356,12 @@ export class GiraffeGenerator {
 
     const bl = ensureSkinnedGeometry(
       generateLimbGeometry(skeleton, {
-        bones: ['back_left_hip', 'back_left_upper', 'back_left_lower', 'back_left_foot'],
+        bones: [
+          'back_left_hip',
+          'back_left_upper',
+          'back_left_lower',
+          'back_left_foot'
+        ],
         radii: backRadii,
         ...limbOptions
       }),
@@ -246,7 +370,12 @@ export class GiraffeGenerator {
 
     const br = ensureSkinnedGeometry(
       generateLimbGeometry(skeleton, {
-        bones: ['back_right_hip', 'back_right_upper', 'back_right_lower', 'back_right_foot'],
+        bones: [
+          'back_right_hip',
+          'back_right_upper',
+          'back_right_lower',
+          'back_right_foot'
+        ],
         radii: backRadii,
         ...limbOptions
       }),
@@ -256,10 +385,9 @@ export class GiraffeGenerator {
     // === Merge ===
     const mergedGeometry = mergeGeometries(
       [
-        torsoGeometry,
-        neckGeometry,
+        spineNeckGeometry,
         headGeometry,
-        neckBlendGeometry,
+        neckBlendGeometry, // null unless enableNeckBlend === true
         hornLeft,
         hornRight,
         earLeft,
