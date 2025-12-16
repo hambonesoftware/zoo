@@ -40,6 +40,13 @@ export class ElephantBehavior {
     // Locomotion controller: expects an object with { bones, mesh, setState? }
     this.locomotion = new ElephantLocomotion(this);
 
+    // Walk-in-place is useful for the creature studio so the elephant stays
+    // centered while still animating a full gait and emitting footfalls.
+    this.walkInPlace = !!opts.walkInPlace;
+    if (this.locomotion?.setWalkInPlace) {
+      this.locomotion.setWalkInPlace(this.walkInPlace);
+    }
+
     this._strideCounter = 0;
     this._pentatonicIntervals = Array.isArray(opts.pentatonicIntervals)
       ? opts.pentatonicIntervals

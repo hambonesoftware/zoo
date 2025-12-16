@@ -46,6 +46,7 @@ export class ElephantPen {
       bodyColor: options.bodyColor,
       variantSeed: options.variantSeed,
       soundFontEngine: options.soundFontEngine,
+      walkInPlace: options.walkInPlace !== undefined ? !!options.walkInPlace : true,
       stepInstrument: options.elephantInstrument || options.stepInstrument,
       baseMidiNote: options.elephantBaseMidiNote || options.baseMidiNote
     };
