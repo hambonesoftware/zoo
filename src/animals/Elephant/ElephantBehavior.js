@@ -43,6 +43,12 @@ export class ElephantBehavior {
     };
   }
 
+  setFootfallListener(listener) {
+    if (this.locomotion && typeof this.locomotion.setFootfallListener === 'function') {
+      this.locomotion.setFootfallListener(listener);
+    }
+  }
+
   /**
    * Configure environment data such as enclosure radius and pond location.
    * Propagates to locomotion and defaults the elephant into a wandering state

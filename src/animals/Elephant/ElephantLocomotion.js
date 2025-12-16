@@ -100,6 +100,9 @@ export class ElephantLocomotion {
     // Idle timer for subtle motion
     this._idleTime = 0;
 
+    this._footfallListener = null;
+    this._legSwingState = {};
+
     // Gait parameters
     this.gait = {
       // Fraction of the cycle spent in swing (foot in the air).
@@ -370,6 +373,14 @@ export class ElephantLocomotion {
     }
 
     this._solveLegIKFromLocalTarget(leg, target);
+
+    const inSwing = u < swingDuration;
+    const wasSwinging = this._legSwingState[legKey];
+    this._legSwingState[legKey] = inSwing;
+
+    if (wasSwinging === true && !inSwing) {
+      this._emitFootfall(legKey, u, swingDuration);
+    }
   }
 
   // Stride & speed helpers so translational speed matches the leg cycle.
@@ -407,6 +418,42 @@ export class ElephantLocomotion {
     const stance = 1.0 - swing;
     if (stance <= 0.0001 || freq <= 0 || stepLength <= 0) return 0;
     return (2 * stepLength * freq) / stance;
+  }
+
+  setFootfallListener(listener) {
+    this._footfallListener = typeof listener === 'function' ? listener : null;
+  }
+
+  _emitFootfall(legKey, phase, swingDuration) {
+    if (!this._footfallListener) return;
+
+    const strideSpeed = this._gaitFrequency;
+    const limbId = this._legKeyToLimbId(legKey);
+
+    this._footfallListener({
+      animalId: this.elephant?.id || 'elephant',
+      limbId,
+      phase,
+      audioHintTime: 0,
+      gait: this.state,
+      strideSpeed,
+      swingDuration
+    });
+  }
+
+  _legKeyToLimbId(legKey) {
+    switch (legKey) {
+      case 'FL':
+        return 'front_left';
+      case 'FR':
+        return 'front_right';
+      case 'BL':
+        return 'back_left';
+      case 'BR':
+        return 'back_right';
+      default:
+        return legKey;
+    }
   }
 
   _getLegPhase(legKey, globalPhase) {
