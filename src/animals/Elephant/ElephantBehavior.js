@@ -23,6 +23,7 @@ export class ElephantBehavior {
     this.time = 0;
     this.instrumentProgram =
       typeof opts.instrumentProgram === 'number' ? opts.instrumentProgram : null;
+    this.soundFontEngine = opts.soundFontEngine || null;
 
     // Environment config (enclosure/pond). Passed in from ElephantPen.
     this.environment = null;
@@ -39,16 +40,57 @@ export class ElephantBehavior {
     // Locomotion controller: expects an object with { bones, mesh, setState? }
     this.locomotion = new ElephantLocomotion(this);
 
+    this._strideCounter = 0;
+    this._pentatonicIntervals = Array.isArray(opts.pentatonicIntervals)
+      ? opts.pentatonicIntervals
+      : [0, 2, 4, 7, 9];
+    this._legOffsets = {
+      front_left: 0,
+      front_right: 2,
+      back_left: 1,
+      back_right: 3
+    };
+    this.stepInstrument = opts.stepInstrument || opts.instrument || 'elephant-steps';
+    this.baseMidiNote = typeof opts.baseMidiNote === 'number' ? opts.baseMidiNote : 48;
+    this.stepVelocity = typeof opts.stepVelocity === 'number' ? opts.stepVelocity : 0.8;
+    this.stepDuration = typeof opts.stepDuration === 'number' ? opts.stepDuration : 0.35;
+    this._footfallListener = null;
+    this._footstepHandlers = new Set();
+    this._locomotionFootstepUnsub = null;
+    this._bindFootstepRelay();
+
     // Optional debug flag (for future HUD/overlays)
     this.debug = {
       enabled: !!opts.debug
     };
+
+    this.setFootfallListener(this._onFootfall.bind(this));
   }
 
   setFootfallListener(listener) {
-    if (this.locomotion && typeof this.locomotion.setFootfallListener === 'function') {
-      this.locomotion.setFootfallListener(listener);
-    }
+    this._footfallListener = typeof listener === 'function' ? listener : null;
+  }
+
+  _bindFootstepRelay() {
+    if (this._locomotionFootstepUnsub) return;
+    if (!this.locomotion || typeof this.locomotion.onFootstep !== 'function') return;
+
+    this._locomotionFootstepUnsub = this.locomotion.onFootstep((evt) => {
+      if (this._footfallListener) {
+        this._footfallListener(evt);
+      }
+
+      this._footstepHandlers.forEach((handler) => handler(evt));
+    });
+  }
+
+  onFootstep(listener) {
+    if (typeof listener !== 'function') return () => {};
+    this._footstepHandlers.add(listener);
+    this._bindFootstepRelay();
+    return () => {
+      this._footstepHandlers.delete(listener);
+    };
   }
 
   setInstrumentProgram(programNumber) {
@@ -111,5 +153,53 @@ export class ElephantBehavior {
       locomotionState: this.locomotion ? this.locomotion.state : null,
       instrumentProgram: this.instrumentProgram
     };
+  }
+
+  setStepMusicConfig(config = {}) {
+    if (!config) return;
+    if (typeof config.stepInstrument !== 'undefined') {
+      this.stepInstrument = config.stepInstrument;
+    }
+    if (typeof config.baseMidiNote === 'number') {
+      this.baseMidiNote = config.baseMidiNote;
+    }
+    if (Array.isArray(config.pentatonicIntervals)) {
+      this._pentatonicIntervals = config.pentatonicIntervals;
+    }
+  }
+
+  _onFootfall(event = {}) {
+    if (!event.limbId || !this.soundFontEngine?.playStepNote) return;
+
+    const audioTime = this._getAudioTime();
+    const eventTime = typeof event.timestamp === 'number' ? event.timestamp : audioTime;
+    const midiNote = this._getStepNote(event.limbId, this._strideCounter);
+    const velocity = this._resolveVelocity(event);
+
+    this.soundFontEngine.playStepNote(this.stepInstrument, midiNote, velocity, eventTime, this.stepDuration);
+
+    this._strideCounter += 1;
+  }
+
+  _getStepNote(limbId, strideIndex) {
+    const intervals = this._pentatonicIntervals.length > 0 ? this._pentatonicIntervals : [0, 2, 4, 7, 9];
+    const offset = this._legOffsets[limbId] ?? 0;
+    const interval = intervals[(strideIndex + offset) % intervals.length];
+    return this.baseMidiNote + interval;
+  }
+
+  _resolveVelocity(event = {}) {
+    const speedFactor = typeof event.strideSpeed === 'number' ? THREE.MathUtils.clamp(event.strideSpeed * 0.9, 0.4, 1.0) : 1;
+    return THREE.MathUtils.clamp(this.stepVelocity * speedFactor, 0, 1);
+  }
+
+  _getAudioTime() {
+    if (this.soundFontEngine && typeof this.soundFontEngine.getAudioContext === 'function') {
+      const ctx = this.soundFontEngine.getAudioContext();
+      if (ctx && typeof ctx.currentTime === 'number') {
+        return ctx.currentTime;
+      }
+    }
+    return 0;
   }
 }

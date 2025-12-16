@@ -35,6 +35,7 @@ export class TuningPanel {
     programOptions = [],
     defaultProgram = null,
     defaultProgramName = 'Default instrument'
+    onAudioSettingsChange
   } = {}) {
     this.onTuningChange = onTuningChange;
     this.onReset = onReset;
@@ -44,6 +45,7 @@ export class TuningPanel {
     this.onUndo = onUndo;
     this.onRedo = onRedo;
     this.onInstrumentChange = onInstrumentChange;
+    this.onAudioSettingsChange = onAudioSettingsChange;
 
     this.schema = {};
     this.values = {};
@@ -58,6 +60,7 @@ export class TuningPanel {
     this.programOptions = programOptions || [];
     this.selectedProgram = typeof defaultProgram === 'number' ? defaultProgram : null;
     this.defaultProgramName = defaultProgramName;
+    this.instrumentOptions = [];
 
     this.panelWidth = this.readStoredWidth();
     this.collapsed = this.readStoredCollapsed();
@@ -156,12 +159,30 @@ export class TuningPanel {
     });
 
     this.instrumentSelect?.addEventListener('change', () => {
-      const value = this.instrumentSelect.value;
-      const programNumber = value === '' ? null : Number(value);
-      this.selectedProgram = programNumber;
-      if (typeof this.onInstrumentChange === 'function') {
-        this.onInstrumentChange(programNumber);
-      }
+      const programNumber = Number(this.instrumentSelect.value);
+      this.emitAudioSettingsChange({ instrumentProgram: Number.isNaN(programNumber) ? null : programNumber });
+    });
+
+    this.masterVolumeSlider?.addEventListener('input', () => {
+      const volume = Number(this.masterVolumeSlider.value);
+      this.emitAudioSettingsChange({ masterVolume: Number.isNaN(volume) ? null : volume });
+    });
+
+    this.masterMuteToggle?.addEventListener('change', () => {
+      this.emitAudioSettingsChange({ masterMuted: Boolean(this.masterMuteToggle.checked) });
+    });
+
+    this.animalVolumeSlider?.addEventListener('input', () => {
+      const volume = Number(this.animalVolumeSlider.value);
+      this.emitAudioSettingsChange({ animalVolume: Number.isNaN(volume) ? null : volume });
+    });
+
+    this.animalMuteToggle?.addEventListener('change', () => {
+      this.emitAudioSettingsChange({ animalMuted: Boolean(this.animalMuteToggle.checked) });
+    });
+
+    this.footstepToggle?.addEventListener('change', () => {
+      this.emitAudioSettingsChange({ footstepsEnabled: Boolean(this.footstepToggle.checked) });
     });
 
     this.resizeHandle?.addEventListener('mousedown', (event) => {
@@ -234,10 +255,40 @@ export class TuningPanel {
             </label>
           </div>
         </div>
-          <div class="zoo-tuning-body">
-          <div class="zoo-tuning-audio">
-            <label for="zoo-tuning-instrument">Instrument</label>
-            <select id="zoo-tuning-instrument"></select>
+        <div class="zoo-tuning-body">
+          <div class="zoo-audio-panel" aria-label="Audio settings">
+            <div class="zoo-audio-row">
+              <label title="Pick a SoundFont program for this animal's notes">
+                Instrument
+                <select id="zoo-audio-instrument"></select>
+              </label>
+            </div>
+            <div class="zoo-audio-row">
+              <label title="Overall Zoo volume multiplier">
+                Master volume
+                <input id="zoo-audio-master-volume" type="range" min="0" max="1" step="0.01" />
+              </label>
+              <label class="zoo-inline-toggle" title="Quickly mute all Zoo audio without touching individual animals">
+                <input id="zoo-audio-master-mute" type="checkbox" />
+                <span>Mute all</span>
+              </label>
+            </div>
+            <div class="zoo-audio-row">
+              <label title="Balance this animal relative to the rest of the Zoo">
+                Animal volume
+                <input id="zoo-audio-animal-volume" type="range" min="0" max="1" step="0.01" />
+              </label>
+              <label class="zoo-inline-toggle" title="Silence this animal's musical voice without stopping other audio">
+                <input id="zoo-audio-animal-mute" type="checkbox" />
+                <span>Mute animal</span>
+              </label>
+            </div>
+            <div class="zoo-audio-row">
+              <label class="zoo-inline-toggle" title="Disable footstep-triggered notes without muting other music">
+                <input id="zoo-audio-footsteps" type="checkbox" checked />
+                <span>Footstep sounds</span>
+              </label>
+            </div>
           </div>
           <div class="zoo-tuning-presets">
             <div class="zoo-tuning-presets-row">
@@ -267,14 +318,59 @@ export class TuningPanel {
     return panel;
   }
 
-  setSchema(
-    schema = {},
-    values = {},
-    animalId = null,
-    defaults = {},
-    schemaVersion = '1.0.0',
-    audioConfig = {}
-  ) {
+  setInstrumentOptions(options = []) {
+    this.instrumentOptions = [...options];
+    if (!this.instrumentSelect) return;
+
+    this.instrumentSelect.innerHTML = '';
+    for (const option of this.instrumentOptions) {
+      const el = document.createElement('option');
+      el.value = `${option.value}`;
+      el.textContent = option.label || option.value;
+      this.instrumentSelect.appendChild(el);
+    }
+  }
+
+  setAudioState({
+    instrumentProgram,
+    masterVolume = 1,
+    masterMuted = false,
+    animalVolume = 1,
+    animalMuted = false,
+    footstepsEnabled = true,
+    instrumentOptions
+  } = {}) {
+    if (instrumentOptions) {
+      this.setInstrumentOptions(instrumentOptions);
+    }
+
+    if (this.instrumentSelect && typeof instrumentProgram === 'number') {
+      this.instrumentSelect.value = `${instrumentProgram}`;
+    }
+    if (this.masterVolumeSlider) {
+      this.masterVolumeSlider.value = masterVolume;
+    }
+    if (this.masterMuteToggle) {
+      this.masterMuteToggle.checked = Boolean(masterMuted);
+    }
+    if (this.animalVolumeSlider) {
+      this.animalVolumeSlider.value = animalVolume;
+    }
+    if (this.animalMuteToggle) {
+      this.animalMuteToggle.checked = Boolean(animalMuted);
+    }
+    if (this.footstepToggle) {
+      this.footstepToggle.checked = Boolean(footstepsEnabled);
+    }
+  }
+
+  emitAudioSettingsChange(payload = {}) {
+    if (typeof this.onAudioSettingsChange === 'function') {
+      this.onAudioSettingsChange(payload);
+    }
+  }
+
+  setSchema(schema = {}, values = {}, animalId = null, defaults = {}, schemaVersion = '1.0.0') {
     this.currentAnimalId = animalId ?? this.currentAnimalId;
     this.schema = schema || {};
     this.schemaVersion = schemaVersion || '1.0.0';

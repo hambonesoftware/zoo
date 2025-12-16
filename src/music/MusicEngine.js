@@ -19,6 +19,7 @@ export class MusicEngine {
     this.animalBrains = new Map();
     this.footfallQueue = [];
     this.footfallCallback = null;
+    this.footstepsEnabled = true;
   }
 
   registerAnimalBrain(animalId, brain) {
@@ -27,6 +28,10 @@ export class MusicEngine {
 
   registerFootfallCallback(callback) {
     this.footfallCallback = callback;
+  }
+
+  setFootstepsEnabled(enabled) {
+    this.footstepsEnabled = Boolean(enabled);
   }
 
   enqueueFootfallEvent(event) {
@@ -45,6 +50,11 @@ export class MusicEngine {
   }
 
   consumeFootfallQueue(audioTime) {
+    if (!this.footstepsEnabled) {
+      this.footfallQueue.length = 0;
+      return;
+    }
+
     if (typeof this.footfallCallback === 'function') {
       const incoming = this.footfallCallback(audioTime);
       this.enqueueFootfallEvent(incoming);
