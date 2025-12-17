@@ -317,7 +317,7 @@ export const ElephantModule = {
   id: 'elephant',
   label: 'Elephant',
 
-  build({ tuning = {} } = {}) {
+  build({ tuning = {}, soundFontEngine } = {}) {
     const defaults = this.getDefaultTuning();
     const merged = { ...defaults, ...tuning };
 
@@ -342,7 +342,8 @@ export const ElephantModule = {
       torso,
       headScale: getNumber(merged['skeleton.headScale'], 1),
       definition,
-      walkInPlace
+      walkInPlace,
+      soundFontEngine
     });
 
     creature.position.set(0, DEFAULT_Y_OFFSET, 0);
@@ -1046,7 +1047,7 @@ export const ElephantModule = {
     );
   },
 
-  rebuild({ tuning = {}, existing } = {}) {
+  rebuild({ tuning = {}, existing, soundFontEngine } = {}) {
     const defaults = this.getDefaultTuning();
     const merged = { ...defaults, ...tuning };
     const definition = buildDefinitionForSkeleton(merged);
@@ -1071,7 +1072,8 @@ export const ElephantModule = {
         torso,
         headScale: getNumber(merged['skeleton.headScale'], 1),
         definition,
-        walkInPlace
+        walkInPlace,
+        soundFontEngine
       });
 
       creature.position.set(0, DEFAULT_Y_OFFSET, 0);

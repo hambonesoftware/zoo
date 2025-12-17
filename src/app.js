@@ -28,13 +28,24 @@ class App {
       console.warn('[Zoo] WebGPU is not available; falling back to WebGL renderer.');
     }
 
+    // Audio + music subsystems
+    this.soundFontEngine = new SoundFontEngine();
+    this.theoryEngine = new TheoryEngine();
+    this.noteHighway = new NoteHighway(this.soundFontEngine.getAudioContext());
+    this.musicEngine = new MusicEngine({
+      soundFontEngine: this.soundFontEngine,
+      theoryEngine: this.theoryEngine,
+      noteHighway: this.noteHighway
+    });
+
     // Create the world (scene, camera, controls, renderer)
     const container = document.body;
     const defaultAnimalType = 'cat';
     this.currentAnimalType = defaultAnimalType;
     this.world = createWorld(container, {
       preferWebGPU: this.webgpuSupported,
-      defaultAnimal: defaultAnimalType
+      defaultAnimal: defaultAnimalType,
+      soundFontEngine: this.soundFontEngine
     });
 
     this.currentTuning = {};
@@ -46,16 +57,6 @@ class App {
     this.camera = this.world.camera;
     this.controls = this.world.controls;
     this.renderer = this.world.renderer;
-
-    // Audio + music subsystems
-    this.soundFontEngine = new SoundFontEngine();
-    this.theoryEngine = new TheoryEngine();
-    this.noteHighway = new NoteHighway(this.soundFontEngine.getAudioContext());
-    this.musicEngine = new MusicEngine({
-      soundFontEngine: this.soundFontEngine,
-      theoryEngine: this.theoryEngine,
-      noteHighway: this.noteHighway
-    });
     this.audioSettings = this.createDefaultAudioSettings();
     this.applyAudioRoutingDefaults();
     this.audioReady = false;
@@ -590,7 +591,8 @@ class App {
         console.warn('[Zoo] WebGPU renderer failed to initialize; rebuilding world with WebGL.', error);
         const fallback = createWorld(document.body, {
           preferWebGPU: false,
-          defaultAnimal: 'cat'
+          defaultAnimal: 'cat',
+          soundFontEngine: this.soundFontEngine
         });
         this.world = fallback;
         this.scene = fallback.scene;
