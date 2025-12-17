@@ -47,7 +47,10 @@ function createCanvas(canvasContainer) {
   return canvas;
 }
 
-export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnimal = 'cat' } = {}) {
+export function createWorld(
+  canvasContainer,
+  { preferWebGPU = true, defaultAnimal = 'cat', soundFontEngine = null } = {}
+) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xe8ecef);
 
@@ -150,7 +153,7 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
     const defaults = module.getDefaultTuning ? module.getDefaultTuning() : {};
     currentTuning = { ...defaults, ...tuningOverrides };
 
-    const instance = module.build({ renderer, scene, tuning: currentTuning });
+    const instance = module.build({ renderer, scene, tuning: currentTuning, soundFontEngine });
     if (!instance) {
       console.warn(`[Zoo] Failed to build animal '${animalId}'`);
       return null;
@@ -185,7 +188,7 @@ export function createWorld(canvasContainer, { preferWebGPU = true, defaultAnima
     rebuildTimer = setTimeout(() => {
       rebuildTimer = null;
       if (typeof activeModule.rebuild === 'function') {
-        const rebuilt = activeModule.rebuild({ renderer, scene, tuning: currentTuning, existing: activeAnimal });
+        const rebuilt = activeModule.rebuild({ renderer, scene, tuning: currentTuning, existing: activeAnimal, soundFontEngine });
         if (rebuilt) {
           activeAnimal = rebuilt;
           pen.mountAnimal(rebuilt);
