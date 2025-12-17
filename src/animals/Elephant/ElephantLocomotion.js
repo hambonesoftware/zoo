@@ -454,6 +454,10 @@ export class ElephantLocomotion {
   _emitFootfall(legKey, phase, swingDuration) {
     const strideSpeed = this._gaitFrequency;
     const strideDuration = strideSpeed > 0 ? 1 / strideSpeed : 0;
+    const stancePortion = THREE.MathUtils.clamp(1 - swingDuration, 0, 1);
+    const stanceDuration = strideDuration * stancePortion;
+    const contactDuration = stanceDuration;
+    const stepDuration = strideDuration;
     const strideLength = this._getStrideLength() * this.walkBlend;
     const limbId = this._legKeyToLimbId(legKey);
     const phaseTime = strideDuration * phase;
@@ -468,6 +472,19 @@ export class ElephantLocomotion {
       audioHintTime: 0,
       gait: this.state,
       strideSpeed,
+      gaitMeta: {
+        strideDuration,
+        stanceDuration,
+        contactDuration,
+        stepDuration,
+        strideSpeed,
+        swingDuration,
+        strideLength
+      },
+      strideDuration,
+      stanceDuration,
+      contactDuration,
+      stepDuration,
       swingDuration,
       strideLength,
       timestamp
