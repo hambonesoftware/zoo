@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
+    "soundfont2": "^0.5.0",
     "three": "^0.177.0"
   },
   "devDependencies": {
