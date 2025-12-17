@@ -61,9 +61,11 @@ export class ElephantBehavior {
     this.baseMidiNote = typeof opts.baseMidiNote === 'number' ? opts.baseMidiNote : 48;
     this.stepVelocity = typeof opts.stepVelocity === 'number' ? opts.stepVelocity : 0.8;
     this.stepDuration = typeof opts.stepDuration === 'number' ? opts.stepDuration : 0.35;
-    this._footfallListener = null;
     this._footstepHandlers = new Set();
+    this._defaultFootfallHandler = this._onFootfall.bind(this);
+    this._legacyFootfallListener = null;
     this._locomotionFootstepUnsub = null;
+    this._ensureDefaultFootfallHandler();
     this._bindFootstepRelay();
 
     // Optional debug flag (for future HUD/overlays)
@@ -71,11 +73,20 @@ export class ElephantBehavior {
       enabled: !!opts.debug
     };
 
-    this.setFootfallListener(this._onFootfall.bind(this));
   }
 
   setFootfallListener(listener) {
-    this._footfallListener = typeof listener === 'function' ? listener : null;
+    if (typeof listener !== 'function') return;
+
+    this._ensureDefaultFootfallHandler();
+
+    if (this._legacyFootfallListener && this._legacyFootfallListener !== listener) {
+      this._footstepHandlers.delete(this._legacyFootfallListener);
+    }
+
+    this._legacyFootfallListener = listener;
+    this._footstepHandlers.add(listener);
+    this._bindFootstepRelay();
   }
 
   _bindFootstepRelay() {
@@ -83,21 +94,28 @@ export class ElephantBehavior {
     if (!this.locomotion || typeof this.locomotion.onFootstep !== 'function') return;
 
     this._locomotionFootstepUnsub = this.locomotion.onFootstep((evt) => {
-      if (this._footfallListener) {
-        this._footfallListener(evt);
-      }
-
+      this._ensureDefaultFootfallHandler();
       this._footstepHandlers.forEach((handler) => handler(evt));
     });
   }
 
   onFootstep(listener) {
     if (typeof listener !== 'function') return () => {};
+    this._ensureDefaultFootfallHandler();
     this._footstepHandlers.add(listener);
     this._bindFootstepRelay();
     return () => {
       this._footstepHandlers.delete(listener);
     };
+  }
+
+  _ensureDefaultFootfallHandler() {
+    if (
+      this._defaultFootfallHandler &&
+      !this._footstepHandlers.has(this._defaultFootfallHandler)
+    ) {
+      this._footstepHandlers.add(this._defaultFootfallHandler);
+    }
   }
 
   setInstrumentProgram(programNumber) {
