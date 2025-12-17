@@ -28,13 +28,18 @@ class App {
       console.warn('[Zoo] WebGPU is not available; falling back to WebGL renderer.');
     }
 
+    // Track footfall audio bridging
+    this.footfallUnsubscribe = null;
+    this.lastFootfallTarget = null;
+
     // Create the world (scene, camera, controls, renderer)
     const container = document.body;
     const defaultAnimalType = 'cat';
     this.currentAnimalType = defaultAnimalType;
     this.world = createWorld(container, {
       preferWebGPU: this.webgpuSupported,
-      defaultAnimal: defaultAnimalType
+      defaultAnimal: defaultAnimalType,
+      onAnimalConstructed: (animal, meta) => this.onAnimalConstructed(animal, meta)
     });
 
     this.currentTuning = {};
@@ -92,6 +97,8 @@ class App {
         await this.soundFontEngine.resumeContext();
         await this.soundFontEngine.loadSoundFont('/audio/general.sf2');
         this.audioReady = true;
+
+        this.registerFootfallListenerIfReady();
 
         // Expose for quick console testing
         window.soundFontEngine = this.soundFontEngine;
@@ -318,6 +325,62 @@ class App {
 
     this.syncTuningPanel(defaultAnimalType);
     this.syncAudioPanel(defaultAnimalType);
+  }
+
+  onAnimalConstructed(animalInstance, meta = {}) {
+    this.teardownFootfallListener();
+    this.lastFootfallTarget = {
+      animalInstance,
+      animalId: meta?.animalId || this.currentAnimalType
+    };
+
+    this.registerFootfallListenerIfReady();
+  }
+
+  registerFootfallListenerIfReady() {
+    if (!this.audioReady) return;
+
+    const target = this.lastFootfallTarget;
+    const locomotion = target?.animalInstance?.root?.behavior?.locomotion;
+    if (!locomotion) return;
+
+    const listener = (event = {}) => {
+      if (!this.audioReady || !this.musicEngine || !this.soundFontEngine) return;
+
+      const ctx = this.soundFontEngine.getAudioContext?.();
+      const audioTime = ctx?.currentTime ?? 0;
+      const payload = {
+        ...event,
+        animalId: event.animalId || target.animalId || this.currentAnimalType,
+        audioTime
+      };
+
+      if (typeof this.musicEngine.handleFootfallEvent === 'function') {
+        this.musicEngine.handleFootfallEvent(payload);
+      }
+    };
+
+    this.teardownFootfallListener();
+
+    let unsubscribe = null;
+    if (typeof locomotion.registerFootfallListener === 'function') {
+      unsubscribe = locomotion.registerFootfallListener(listener);
+    } else if (typeof locomotion.addFootfallListener === 'function') {
+      unsubscribe = locomotion.addFootfallListener(listener);
+    } else if (typeof locomotion.onFootfall === 'function') {
+      unsubscribe = locomotion.onFootfall(listener);
+    }
+
+    if (typeof unsubscribe === 'function') {
+      this.footfallUnsubscribe = unsubscribe;
+    }
+  }
+
+  teardownFootfallListener() {
+    if (typeof this.footfallUnsubscribe === 'function') {
+      this.footfallUnsubscribe();
+    }
+    this.footfallUnsubscribe = null;
   }
 
   syncTuningPanel(animalType) {
@@ -603,7 +666,8 @@ class App {
         console.warn('[Zoo] WebGPU renderer failed to initialize; rebuilding world with WebGL.', error);
         const fallback = createWorld(document.body, {
           preferWebGPU: false,
-          defaultAnimal: 'cat'
+          defaultAnimal: 'cat',
+          onAnimalConstructed: (animal, meta) => this.onAnimalConstructed(animal, meta)
         });
         this.world = fallback;
         this.scene = fallback.scene;
