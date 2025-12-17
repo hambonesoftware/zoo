@@ -77,11 +77,16 @@ export class MusicEngine {
     const midiNote = this.resolveMidiNote(footfall, profile);
     if (typeof midiNote !== 'number') return null;
 
-    const gaitMeta = footfall.gait || footfall.meta || {};
+    const gaitMetaSource =
+      (typeof footfall.gait === 'object' && footfall.gait) ||
+      footfall.gaitMeta ||
+      footfall.meta ||
+      null;
+    const gaitMeta = gaitMetaSource && typeof gaitMetaSource === 'object' ? gaitMetaSource : {};
     const baseStart = this.resolveFootfallTime(footfall, audioTime);
     const startTime = baseStart + this.lookaheadSeconds;
     const duration = this.resolveFootfallDuration({ gaitMeta, profile, footfall });
-    const velocity = this.resolveFootfallVelocity(gaitMeta);
+    const velocity = this.resolveFootfallVelocity({ gaitMeta, footfall });
 
     return createMusicEvent({
       animalId: footfall.animalId,
@@ -115,14 +120,32 @@ export class MusicEngine {
   }
 
   resolveFootfallDuration({ gaitMeta = {}, profile, footfall } = {}) {
+    const isDuration = (value) => typeof value === 'number' && value > 0;
     const durationCandidates = [
+      footfall?.duration,
+      gaitMeta.duration,
+      footfall?.contactDuration,
       gaitMeta.contactDuration,
+      footfall?.stanceDuration,
       gaitMeta.stanceDuration,
-      gaitMeta.stepDuration,
-      gaitMeta.duration
+      footfall?.strideDuration,
+      gaitMeta.strideDuration,
+      footfall?.stepDuration,
+      gaitMeta.stepDuration
     ];
-    const duration = durationCandidates.find((value) => typeof value === 'number' && value > 0);
-    if (typeof duration === 'number') return duration;
+    const directDuration = durationCandidates.find(isDuration);
+    if (isDuration(directDuration)) return directDuration;
+
+    const strideSpeedCandidates = [footfall?.strideSpeed, gaitMeta.strideSpeed];
+    const strideSpeed = strideSpeedCandidates.find(isDuration);
+    if (isDuration(strideSpeed)) {
+      const stanceDuration = [footfall?.stanceDuration, gaitMeta.stanceDuration, footfall?.contactDuration, gaitMeta.contactDuration].find(isDuration);
+      const stanceFromSpeed = stanceDuration && stanceDuration / strideSpeed;
+      if (isDuration(stanceFromSpeed)) return stanceFromSpeed;
+
+      const strideFromSpeed = 1 / strideSpeed;
+      if (isDuration(strideFromSpeed)) return strideFromSpeed;
+    }
 
     const tempoBPMCandidates = [footfall?.tempoBPM, gaitMeta.tempoBPM, profile?.tempoBPM];
     const tempoBPM = tempoBPMCandidates.find((value) => typeof value === 'number' && value > 0) || DEFAULT_PROFILE.tempoBPM;
@@ -130,8 +153,16 @@ export class MusicEngine {
     return secondsPerBeat * 0.5;
   }
 
-  resolveFootfallVelocity(gaitMeta = {}) {
-    const velocityCandidates = [gaitMeta.intensity, gaitMeta.force, gaitMeta.weight, gaitMeta.speed, gaitMeta.velocity];
+  resolveFootfallVelocity({ gaitMeta = {}, footfall } = {}) {
+    const velocityCandidates = [
+      footfall?.velocity,
+      gaitMeta.velocity,
+      footfall?.intensity,
+      gaitMeta.intensity,
+      gaitMeta.force,
+      gaitMeta.weight,
+      gaitMeta.speed
+    ];
     const velocity = velocityCandidates.find((value) => typeof value === 'number');
     const clamped = Math.max(0, Math.min(1, typeof velocity === 'number' ? velocity : 0.85));
     return clamped;
