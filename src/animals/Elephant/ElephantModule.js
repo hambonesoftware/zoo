@@ -4,11 +4,22 @@ import * as THREE from 'three';
 import { ElephantCreature } from './ElephantCreature.js';
 import { ElephantDefinition } from './ElephantDefinition.js';
 
-const DEFAULT_Y_OFFSET = 1.37; // padHeight (0.17) + elephant base height (~1.2)
+const DEFAULT_PAD_HEIGHT = 0.17;
+const DEFAULT_PEN_RADIUS = 3.5;
+const DEFAULT_Y_OFFSET = DEFAULT_PAD_HEIGHT + 1.2; // padHeight (0.17) + elephant base height (~1.2)
 const TUNING_SCHEMA_VERSION = '1.1.0';
 const BONE_OFFSET_PREFIX = 'boneOffset';
 
 const LIMB_KEYS = ['frontLeft', 'frontRight', 'backLeft', 'backRight'];
+
+const DEFAULT_ENVIRONMENT = {
+  enclosureCenter: [0, DEFAULT_PAD_HEIGHT, 0],
+  enclosureRadius: DEFAULT_PEN_RADIUS,
+  pondCenter: [0, DEFAULT_PAD_HEIGHT, 0],
+  pondRadius: 0,
+  obstacles: [],
+  groundHeight: DEFAULT_PAD_HEIGHT
+};
 
 function getNumber(value, fallback) {
   return typeof value === 'number' ? value : fallback;
@@ -32,6 +43,33 @@ function cloneDefinition(definition) {
     bones: definition.bones.map((bone) => ({ ...bone, position: [...bone.position] })),
     sizes: { ...definition.sizes }
   };
+}
+
+function toVector3(value, fallbackY = DEFAULT_PAD_HEIGHT) {
+  if (value instanceof THREE.Vector3) return value.clone();
+  if (Array.isArray(value) && value.length >= 3) return new THREE.Vector3(value[0], value[1], value[2]);
+  if (value && typeof value === 'object' && 'x' in value && 'y' in value && 'z' in value) {
+    return new THREE.Vector3(value.x, value.y, value.z);
+  }
+  return new THREE.Vector3(0, fallbackY, 0);
+}
+
+function cloneEnvironment(env = DEFAULT_ENVIRONMENT) {
+  const source = env || DEFAULT_ENVIRONMENT;
+  const groundHeight = typeof source.groundHeight === 'number' ? source.groundHeight : DEFAULT_PAD_HEIGHT;
+  return {
+    enclosureCenter: toVector3(source.enclosureCenter, groundHeight),
+    enclosureRadius:
+      typeof source.enclosureRadius === 'number' ? source.enclosureRadius : DEFAULT_PEN_RADIUS,
+    pondCenter: toVector3(source.pondCenter, groundHeight),
+    pondRadius: typeof source.pondRadius === 'number' ? source.pondRadius : 0,
+    obstacles: Array.isArray(source.obstacles) ? [...source.obstacles] : [],
+    groundHeight
+  };
+}
+
+function getDefaultEnvironment() {
+  return cloneEnvironment(DEFAULT_ENVIRONMENT);
 }
 
 function applyScaleToBone(bones, name, scale) {
@@ -139,6 +177,18 @@ function buildBoneOffsetDefaults(definition) {
     defaults[`${BONE_OFFSET_PREFIX}.${bone.name}.z`] = 0;
   }
   return defaults;
+}
+
+function resolveEnvironmentFromExisting(existing) {
+  const candidate =
+    existing?.behavior?.environment || existing?.root?.behavior?.environment || null;
+  return cloneEnvironment(candidate || DEFAULT_ENVIRONMENT);
+}
+
+function configureCreatureEnvironment(creature, env) {
+  if (!creature?.behavior || typeof creature.behavior.configureEnvironment !== 'function') return;
+  const environment = cloneEnvironment(env || DEFAULT_ENVIRONMENT);
+  creature.behavior.configureEnvironment(environment);
 }
 
 function buildLimbMeshConfig(tuning) {
@@ -263,12 +313,14 @@ export const ElephantModule = {
     const defaults = this.getDefaultTuning();
     const merged = { ...defaults, ...tuning };
 
+    const environment = getDefaultEnvironment();
     const ringsOverlay = buildRingsConfig(merged);
     const scale = getNumber(merged['global.scale'], merged.scale);
     const showSkeleton = merged['debug.showSkeleton'] ?? merged.showSkeleton;
     const limbMesh = buildLimbMeshConfig(merged);
     const torso = buildTorsoConfig(merged);
     const definition = buildDefinitionForSkeleton(merged);
+    const walkInPlace = merged.walkInPlace ?? true;
 
     const creature = new ElephantCreature({
       scale,
@@ -281,11 +333,13 @@ export const ElephantModule = {
       limbMesh,
       torso,
       headScale: getNumber(merged['skeleton.headScale'], 1),
-      definition
+      definition,
+      walkInPlace
     });
 
     creature.position.set(0, DEFAULT_Y_OFFSET, 0);
     applyTransform(creature, merged);
+    configureCreatureEnvironment(creature, environment);
 
     return {
       root: creature,
@@ -953,19 +1007,22 @@ export const ElephantModule = {
 
   applyTuning(animalInstance, tuning) {
     if (!animalInstance || !animalInstance.root) return;
+    const creature = animalInstance.root;
+    const environment = resolveEnvironmentFromExisting(creature);
     const merged = { ...this.getDefaultTuning(), ...tuning };
-    applyTransform(animalInstance.root, merged);
-    if (animalInstance.root.position.y === 0) {
-      animalInstance.root.position.y = DEFAULT_Y_OFFSET;
+    applyTransform(creature, merged);
+    if (creature.position.y === 0) {
+      creature.position.y = DEFAULT_Y_OFFSET;
     }
     const showSkeleton = merged['debug.showSkeleton'] ?? merged.showSkeleton;
-    if (typeof animalInstance.root.setSkeletonVisible === 'function') {
-      animalInstance.root.setSkeletonVisible(Boolean(showSkeleton));
+    if (typeof creature.setSkeletonVisible === 'function') {
+      creature.setSkeletonVisible(Boolean(showSkeleton));
     }
-    if (animalInstance.root.ringsOverlay) {
+    if (creature.ringsOverlay) {
       const ringsOverlay = buildRingsConfig(merged);
-      animalInstance.root.ringsOverlay.updateConfig(ringsOverlay);
+      creature.ringsOverlay.updateConfig(ringsOverlay);
     }
+    configureCreatureEnvironment(creature, environment);
   },
 
   shouldRebuildOnChange(key) {
@@ -990,6 +1047,8 @@ export const ElephantModule = {
     const ringsOverlay = buildRingsConfig(merged);
     const scale = getNumber(merged['global.scale'], merged.scale);
     const showSkeleton = merged['debug.showSkeleton'] ?? merged.showSkeleton;
+    const environment = resolveEnvironmentFromExisting(existing || null);
+    const walkInPlace = merged.walkInPlace ?? true;
 
     try {
       const creature = new ElephantCreature({
@@ -1003,11 +1062,13 @@ export const ElephantModule = {
         limbMesh,
         torso,
         headScale: getNumber(merged['skeleton.headScale'], 1),
-        definition
+        definition,
+        walkInPlace
       });
 
       creature.position.set(0, DEFAULT_Y_OFFSET, 0);
       applyTransform(creature, merged);
+      configureCreatureEnvironment(creature, environment);
 
       const instance = {
         root: creature,
