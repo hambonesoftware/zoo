@@ -185,10 +185,18 @@ function resolveEnvironmentFromExisting(existing) {
   return cloneEnvironment(candidate || DEFAULT_ENVIRONMENT);
 }
 
-function configureCreatureEnvironment(creature, env) {
+function configureCreatureEnvironment(creature, env, { startWander = false } = {}) {
   if (!creature?.behavior || typeof creature.behavior.configureEnvironment !== 'function') return;
   const environment = cloneEnvironment(env || DEFAULT_ENVIRONMENT);
   creature.behavior.configureEnvironment(environment);
+
+  if (startWander) {
+    if (creature.behavior?.locomotion?.setState) {
+      creature.behavior.locomotion.setState('wander');
+    } else if (typeof creature.behavior.setState === 'function') {
+      creature.behavior.setState('wander');
+    }
+  }
 }
 
 function buildLimbMeshConfig(tuning) {
@@ -339,7 +347,7 @@ export const ElephantModule = {
 
     creature.position.set(0, DEFAULT_Y_OFFSET, 0);
     applyTransform(creature, merged);
-    configureCreatureEnvironment(creature, environment);
+    configureCreatureEnvironment(creature, environment, { startWander: true });
 
     return {
       root: creature,
@@ -1022,7 +1030,7 @@ export const ElephantModule = {
       const ringsOverlay = buildRingsConfig(merged);
       creature.ringsOverlay.updateConfig(ringsOverlay);
     }
-    configureCreatureEnvironment(creature, environment);
+    configureCreatureEnvironment(creature, environment, { startWander: true });
   },
 
   shouldRebuildOnChange(key) {
@@ -1068,7 +1076,7 @@ export const ElephantModule = {
 
       creature.position.set(0, DEFAULT_Y_OFFSET, 0);
       applyTransform(creature, merged);
-      configureCreatureEnvironment(creature, environment);
+      configureCreatureEnvironment(creature, environment, { startWander: true });
 
       const instance = {
         root: creature,
