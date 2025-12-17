@@ -85,6 +85,7 @@ export class TuningPanel {
     this.redoButton = this.root.querySelector('#zoo-tuning-redo');
     this.deletePresetButton = this.root.querySelector('#zoo-tuning-delete');
     this.instrumentSelect = this.root.querySelector('#zoo-audio-instrument');
+    this.soundFontStatus = this.root.querySelector('#zoo-audio-status');
     this.masterVolumeSlider = this.root.querySelector('#zoo-audio-master-volume');
     this.masterMuteToggle = this.root.querySelector('#zoo-audio-master-mute');
     this.animalVolumeSlider = this.root.querySelector('#zoo-audio-animal-volume');
@@ -262,6 +263,7 @@ export class TuningPanel {
         </div>
         <div class="zoo-tuning-body">
           <div class="zoo-audio-panel" aria-label="Audio settings">
+            <div class="zoo-audio-status" id="zoo-audio-status" aria-live="polite">SoundFont not loaded.</div>
             <div class="zoo-audio-row">
               <label title="Pick a SoundFont program for this animal's notes">
                 Instrument
@@ -354,6 +356,26 @@ export class TuningPanel {
     if (this.footstepToggle) {
       this.footstepToggle.checked = Boolean(footstepsEnabled);
     }
+  }
+
+  setSoundFontStatus({ loading = false, error = null, programCount = 0 } = {}) {
+    if (!this.soundFontStatus) return;
+    this.soundFontStatus.className = 'zoo-audio-status';
+
+    if (loading) {
+      this.soundFontStatus.textContent = 'Loading soundfont…';
+      this.soundFontStatus.classList.add('loading');
+      return;
+    }
+
+    if (error) {
+      this.soundFontStatus.textContent = 'Failed to load soundfont';
+      this.soundFontStatus.classList.add('error');
+      return;
+    }
+
+    this.soundFontStatus.textContent = programCount ? `Soundfont ready (${programCount} programs)` : 'Soundfont ready';
+    this.soundFontStatus.classList.add('ready');
   }
 
   emitAudioSettingsChange(payload = {}) {

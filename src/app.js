@@ -59,7 +59,7 @@ class App {
     this.audioSettings = this.createDefaultAudioSettings();
     this.applyAudioRoutingDefaults();
     this.audioReady = false;
-    this.programOptions = this.soundFontEngine.getProgramList();
+    this.programOptions = [];
     this.instrumentSelections = {};
     this.refreshMusicForAnimal(defaultAnimalType);
     this.setupAudioBootstrap();
@@ -89,11 +89,12 @@ class App {
       if (this.audioReady) return;
       try {
         await this.soundFontEngine.resumeContext();
-        const loadPromise = this.soundFontEngine.loadSoundFont('/audio/general.sf2');
-        this.refreshProgramOptions();
-        await loadPromise;
+        this.updateSoundFontStatus({ loading: true });
+        await this.soundFontEngine.loadSoundFont('/audio/general.sf2');
         this.refreshProgramOptions();
         this.audioReady = true;
+
+        this.updateSoundFontStatus({ loading: false });
 
         // Expose for quick console testing
         window.soundFontEngine = this.soundFontEngine;
@@ -101,6 +102,7 @@ class App {
       } catch (error) {
         console.error('[Zoo] Failed to initialize audio pipeline:', error);
         this.refreshProgramOptions();
+        this.updateSoundFontStatus({ error });
       }
     };
 
@@ -693,11 +695,12 @@ class App {
     const key = animalType || this.currentAnimalType;
     if (!key) return null;
     if (Object.prototype.hasOwnProperty.call(this.instrumentSelections, key)) {
-      return this.instrumentSelections[key];
+      return this.normalizeInstrumentSelection(key, this.instrumentSelections[key]);
     }
     const fallback = this.getDefaultInstrumentProgram(key);
-    this.instrumentSelections[key] = fallback;
-    return fallback;
+    const normalized = this.normalizeInstrumentSelection(key, fallback);
+    this.instrumentSelections[key] = normalized;
+    return normalized;
   }
 
   getDefaultInstrumentProgram(animalType) {
@@ -719,8 +722,7 @@ class App {
   }
 
   setInstrumentSelection(animalType, programNumber) {
-    const safeProgram =
-      typeof programNumber === 'number' ? programNumber : this.getDefaultInstrumentProgram(animalType);
+    const safeProgram = this.normalizeInstrumentSelection(animalType, programNumber);
     this.instrumentSelections[animalType] = safeProgram;
     this.applyInstrumentSelection(animalType);
   }
@@ -753,6 +755,7 @@ class App {
 
   refreshProgramOptions() {
     this.programOptions = this.soundFontEngine.getProgramList();
+    this.validateInstrumentSelections();
     if (this.tuningPanel) {
       this.tuningPanel.setInstrumentOptions(
         this.programOptions,
@@ -760,6 +763,55 @@ class App {
         this.getDefaultProgramLabel(this.currentAnimalType)
       );
     }
+
+    this.updateSoundFontStatus();
+  }
+
+  normalizeInstrumentSelection(animalId, programNumber) {
+    const normalized =
+      typeof programNumber === 'number' ? programNumber : this.getDefaultInstrumentProgram(animalId);
+    if (this.isProgramAvailable(normalized)) {
+      return normalized;
+    }
+    const defaultProgram = this.getDefaultInstrumentProgram(animalId);
+    if (this.isProgramAvailable(defaultProgram)) {
+      return defaultProgram;
+    }
+    const fallback = this.programOptions.find((program) => typeof program.number === 'number');
+    return fallback ? fallback.number : normalized;
+  }
+
+  isProgramAvailable(programNumber) {
+    if (typeof programNumber !== 'number') return false;
+    return this.programOptions.some((program) => program.number === programNumber);
+  }
+
+  validateInstrumentSelections() {
+    if (!Array.isArray(this.programOptions) || !this.programOptions.length) return;
+    const validPrograms = new Set(this.programOptions.map((program) => program.number));
+    for (const animalId of getRegisteredAnimals()) {
+      const selection = this.instrumentSelections[animalId];
+      if (typeof selection === 'number' && validPrograms.has(selection)) continue;
+      const fallback = validPrograms.has(this.getDefaultInstrumentProgram(animalId))
+        ? this.getDefaultInstrumentProgram(animalId)
+        : this.programOptions[0]?.number;
+      if (typeof fallback === 'number') {
+        this.instrumentSelections[animalId] = fallback;
+        this.audioSettings.instrumentByAnimal[animalId] = fallback;
+        if (animalId === this.currentAnimalType) {
+          this.applyInstrumentSelection(animalId);
+        }
+      }
+    }
+  }
+
+  updateSoundFontStatus({ loading = false, error = null } = {}) {
+    if (!this.tuningPanel?.setSoundFontStatus) return;
+    this.tuningPanel.setSoundFontStatus({
+      loading,
+      error,
+      programCount: this.programOptions.length
+    });
   }
 
   attachFootfallListener(animalType) {
