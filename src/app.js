@@ -57,7 +57,6 @@ class App {
       noteHighway: this.noteHighway
     });
     this.audioSettings = this.createDefaultAudioSettings();
-    this.instrumentOptions = this.getInstrumentOptions();
     this.applyAudioRoutingDefaults();
     this.audioReady = false;
     this.programOptions = this.soundFontEngine.getProgramList();
@@ -90,7 +89,10 @@ class App {
       if (this.audioReady) return;
       try {
         await this.soundFontEngine.resumeContext();
-        await this.soundFontEngine.loadSoundFont('/audio/general.sf2');
+        const loadPromise = this.soundFontEngine.loadSoundFont('/audio/general.sf2');
+        this.refreshProgramOptions();
+        await loadPromise;
+        this.refreshProgramOptions();
         this.audioReady = true;
 
         // Expose for quick console testing
@@ -98,36 +100,12 @@ class App {
         window.musicEngine = this.musicEngine;
       } catch (error) {
         console.error('[Zoo] Failed to initialize audio pipeline:', error);
+        this.refreshProgramOptions();
       }
     };
 
     window.addEventListener('pointerdown', handler, { once: true });
     window.addEventListener('keydown', handler, { once: true });
-  }
-
-  getInstrumentOptions() {
-    const baseOptions = [
-      { value: 0, label: 'Grand Piano (0)' },
-      { value: 11, label: 'Vibraphone (11)' },
-      { value: 24, label: 'Nylon Guitar (24)' },
-      { value: 58, label: 'Tuba / Bass (58)' },
-      { value: 74, label: 'Flute / Lead (74)' },
-      { value: 82, label: 'Synth Lead (82)' }
-    ];
-
-    const defaults = getRegisteredAnimals()
-      .map((animalId) => this.getDefaultInstrumentForAnimal(animalId))
-      .filter((program) => typeof program === 'number');
-
-    const seen = new Set(baseOptions.map((option) => option.value));
-    const options = [...baseOptions];
-    for (const program of defaults) {
-      if (seen.has(program)) continue;
-      seen.add(program);
-      options.push({ value: program, label: `Program ${program}` });
-    }
-
-    return options;
   }
 
   getDefaultInstrumentForAnimal(animalId) {
@@ -203,6 +181,13 @@ class App {
   syncAudioPanel(animalType) {
     if (!this.tuningPanel || !animalType) return;
     this.ensureAudioDefaultsForAnimal(animalType);
+    const defaultProgramName = this.getDefaultProgramLabel(animalType);
+
+    this.tuningPanel.setInstrumentOptions(
+      this.programOptions,
+      this.getInstrumentSelection(animalType),
+      defaultProgramName
+    );
 
     this.tuningPanel.setAudioState({
       instrumentProgram: this.audioSettings.instrumentByAnimal[animalType],
@@ -211,7 +196,7 @@ class App {
       animalVolume: this.audioSettings.animalVolume[animalType],
       animalMuted: this.audioSettings.animalMuted[animalType],
       footstepsEnabled: this.audioSettings.footstepsEnabled,
-      instrumentOptions: this.instrumentOptions
+      instrumentOptions: this.programOptions
     });
   }
 
@@ -722,7 +707,14 @@ class App {
 
   getDefaultProgramLabel(animalType) {
     const program = this.getDefaultInstrumentProgram(animalType);
-    const name = this.soundFontEngine?.getProgramName?.(program);
+    const engine = this.soundFontEngine;
+    if (engine?.getSoundFontError?.()) {
+      return 'SoundFont failed to load';
+    }
+    if (engine?.isSoundFontLoading?.()) {
+      return 'Loading instruments…';
+    }
+    const name = engine?.getProgramName?.(program);
     return name ? `Default (${name})` : 'Default instrument';
   }
 
@@ -757,6 +749,17 @@ class App {
 
     this.applyInstrumentSelection(animalType);
     this.attachFootfallListener(animalType);
+  }
+
+  refreshProgramOptions() {
+    this.programOptions = this.soundFontEngine.getProgramList();
+    if (this.tuningPanel) {
+      this.tuningPanel.setInstrumentOptions(
+        this.programOptions,
+        this.getInstrumentSelection(this.currentAnimalType),
+        this.getDefaultProgramLabel(this.currentAnimalType)
+      );
+    }
   }
 
   attachFootfallListener(animalType) {

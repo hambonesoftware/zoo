@@ -1,9 +1,10 @@
 // src/audio/SoundFontEngine.js
 // A light wrapper that schedules notes against a shared AudioContext.
-// This implementation supports scheduling against a placeholder SoundFont
-// asset but uses synthesized oscillators as a fallback voice so the pipeline
-// remains testable without the full HoneyHex decoder.
+// This implementation decodes SF2 SoundFonts and plays back sample buffers
+// instead of synthesized oscillators so the pipeline matches the real asset
+// layout shipped with the app.
 
+import { SoundFont2, GeneratorType } from 'soundfont2';
 import { audioContextManager } from './AudioContextManager.js';
 
 const GENERAL_MIDI_PROGRAMS = [
@@ -29,9 +30,14 @@ export class SoundFontEngine {
   constructor() {
     this.channelMap = new Map();
     this.instrumentMap = new Map();
-    this.activeVoices = new Map(); // animalId -> Map<midiNote, {osc, gain}>
+    this.activeVoices = new Map(); // animalId -> Map<midiNote, {source, gain}>
     this.soundFontData = null;
+    this.soundFont = null;
+    this.sampleBufferMap = new Map();
+    this.keyCache = new Map();
     this.programs = GENERAL_MIDI_PROGRAMS;
+    this.soundFontLoading = false;
+    this.soundFontError = null;
     this.masterVolume = 1;
     this.masterMuted = false;
     this.animalVolumes = new Map();
@@ -47,14 +53,33 @@ export class SoundFontEngine {
   }
 
   async loadSoundFont(url) {
-    // Fetch and hold the raw data for future decoding. The current
-    // implementation keeps a placeholder copy; hook your HoneyHex
-    // loader here to parse SF2/SFZ data.
+    this.soundFontLoading = true;
+    this.soundFontError = null;
+    this.soundFontData = null;
+    this.soundFont = null;
+    this.sampleBufferMap.clear();
+    this.keyCache.clear();
+
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`Failed to fetch soundfont at ${url}: ${response.status}`);
+      this.soundFontLoading = false;
+      this.soundFontError = new Error(`Failed to fetch soundfont at ${url}: ${response.status}`);
+      throw this.soundFontError;
     }
-    this.soundFontData = await response.arrayBuffer();
+
+    try {
+      this.soundFontData = await response.arrayBuffer();
+      const sf2 = new SoundFont2(new Uint8Array(this.soundFontData));
+      this.soundFont = sf2;
+      this.buildSampleBuffers();
+      this.programs = this.buildProgramListFromPresets(sf2.presets);
+      this.soundFontLoading = false;
+    } catch (error) {
+      this.soundFontLoading = false;
+      this.soundFontError = error;
+      this.programs = GENERAL_MIDI_PROGRAMS;
+      throw error;
+    }
   }
 
   assignChannelForAnimal(animalId, midiChannel) {
@@ -67,6 +92,14 @@ export class SoundFontEngine {
 
   getProgramList() {
     return this.programs;
+  }
+
+  isSoundFontLoading() {
+    return this.soundFontLoading;
+  }
+
+  getSoundFontError() {
+    return this.soundFontError;
   }
 
   getProgramName(programNumber) {
@@ -105,28 +138,44 @@ export class SoundFontEngine {
   noteOnForAnimal(animalId, midiNote, velocity = DEFAULT_VELOCITY, time) {
     const ctx = this.getAudioContext();
     const startTime = typeof time === 'number' ? time : ctx.currentTime;
-    const frequency = this.midiToFrequency(midiNote);
-    const waveform = this.getWaveformForProgram(this.instrumentMap.get(animalId));
-
     const clampedVelocity = Math.max(0, Math.min(1, velocity));
     const amplitude = this.getEffectiveGain(animalId, clampedVelocity);
     if (amplitude <= 0) return;
 
-    const osc = ctx.createOscillator();
-    osc.type = waveform;
-    osc.frequency.value = frequency;
+    const programNumber = this.instrumentMap.get(animalId) ?? 0;
+    const keyData = this.getKeyDataForProgram(programNumber, midiNote);
+
+    if (!keyData || !keyData.sampleBuffer) {
+      return;
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = keyData.sampleBuffer;
+    source.playbackRate.setValueAtTime(this.getPlaybackRateForKey(keyData, midiNote), startTime);
+
+    if (typeof keyData.loopStart === 'number' && typeof keyData.loopEnd === 'number') {
+      if (keyData.loopEnd > keyData.loopStart) {
+        source.loop = true;
+        source.loopStart = keyData.loopStart;
+        source.loopEnd = keyData.loopEnd;
+      }
+    }
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, startTime);
     gain.gain.linearRampToValueAtTime(amplitude, startTime + 0.01);
 
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(startTime);
+    source.connect(gain).connect(ctx.destination);
+    source.start(startTime);
 
     if (!this.activeVoices.has(animalId)) {
       this.activeVoices.set(animalId, new Map());
     }
-    this.activeVoices.get(animalId).set(midiNote, { osc, gain, velocity: clampedVelocity });
+    this.activeVoices.get(animalId).set(midiNote, {
+      source,
+      gain,
+      velocity: clampedVelocity
+    });
   }
 
   noteOffForAnimal(animalId, midiNote, time) {
@@ -142,23 +191,15 @@ export class SoundFontEngine {
     voice.gain.gain.setValueAtTime(voice.gain.gain.value, stopTime);
     voice.gain.gain.linearRampToValueAtTime(0, stopTime + releaseTime);
 
-    voice.osc.stop(stopTime + releaseTime);
+    if (voice.source) {
+      voice.source.stop(stopTime + releaseTime);
+    }
     setTimeout(() => {
-      voice.osc.disconnect();
+      voice.source?.disconnect();
       voice.gain.disconnect();
     }, (stopTime + releaseTime - ctx.currentTime) * 1000);
 
     voices.delete(midiNote);
-  }
-
-  midiToFrequency(midiNote) {
-    return 440 * Math.pow(2, (midiNote - 69) / 12);
-  }
-
-  getWaveformForProgram(programNumber) {
-    if (typeof programNumber !== 'number') return 'sine';
-    const waveforms = ['sine', 'triangle', 'sawtooth', 'square'];
-    return waveforms[Math.abs(programNumber) % waveforms.length];
   }
 
   clampVolume(value) {
@@ -194,6 +235,87 @@ export class SoundFontEngine {
       voice.gain.gain.setValueAtTime(amplitude, now);
     }
   }
+
+  getRootKeyForKeyData(keyData) {
+    const overridingRoot = keyData.generators?.[GeneratorType.OverridingRootKey]?.value;
+    if (typeof overridingRoot === 'number' && overridingRoot >= 0) {
+      return overridingRoot;
+    }
+    const originalPitch = keyData.sample?.header?.originalPitch;
+    if (typeof originalPitch === 'number' && originalPitch >= 0) {
+      return originalPitch;
+    }
+    return 60;
+  }
+
+  getPlaybackRateForKey(keyData, midiNote) {
+    const rootKey = this.getRootKeyForKeyData(keyData);
+    const scaleTuning = keyData.generators?.[GeneratorType.ScaleTuning]?.value ?? 100;
+    const centsFromNote = (midiNote - rootKey) * scaleTuning;
+    const pitchCorrection = keyData.sample?.header?.pitchCorrection ?? 0;
+    return Math.pow(2, (centsFromNote + pitchCorrection) / 1200);
+  }
+
+  getKeyDataForProgram(programNumber, midiNote, bankNumber = 0) {
+    if (!this.soundFont) return null;
+    const cacheKey = `${bankNumber}:${programNumber}:${midiNote}`;
+    if (this.keyCache.has(cacheKey)) return this.keyCache.get(cacheKey);
+
+    const keyData = this.soundFont.getKeyData(midiNote, bankNumber, programNumber);
+    if (!keyData) {
+      this.keyCache.set(cacheKey, null);
+      return null;
+    }
+
+    const sampleBuffer = this.sampleBufferMap.get(keyData.sample) || null;
+    const sampleRate = keyData.sample?.header?.sampleRate || this.getAudioContext().sampleRate;
+    const loopStart = keyData.sample?.header?.startLoop / sampleRate;
+    const loopEnd = keyData.sample?.header?.endLoop / sampleRate;
+
+    const hydrated = { ...keyData, sampleBuffer, loopStart, loopEnd };
+    this.keyCache.set(cacheKey, hydrated);
+    return hydrated;
+  }
+
+  buildSampleBuffers() {
+    if (!this.soundFont) return;
+    const ctx = this.getAudioContext();
+    this.sampleBufferMap.clear();
+
+    for (const sample of this.soundFont.samples) {
+      const header = sample.header || {};
+      const buffer = ctx.createBuffer(1, sample.data.length, header.sampleRate || ctx.sampleRate);
+      const channel = buffer.getChannelData(0);
+      for (let i = 0; i < sample.data.length; i += 1) {
+        channel[i] = sample.data[i] / 32768;
+      }
+      this.sampleBufferMap.set(sample, buffer);
+    }
+  }
+
+  buildProgramListFromPresets(presets = []) {
+    const mapped = presets.map((preset) => {
+      const number = preset?.header?.preset ?? 0;
+      const bank = preset?.header?.bank ?? 0;
+      const baseName = preset?.header?.name || `Program ${number}`;
+      const name = bank ? `${baseName} (Bank ${bank})` : baseName;
+      return { number, bank, name };
+    });
+
+    const deduped = new Map();
+    for (const program of mapped) {
+      const key = `${program.bank}:${program.number}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, program);
+      }
+    }
+
+    return Array.from(deduped.values()).sort((a, b) => {
+      if (a.bank !== b.bank) return a.bank - b.bank;
+      return a.number - b.number;
+    });
+  }
+
   playStepNote(instrument, midiNote, velocity = DEFAULT_VELOCITY, time, duration = DEFAULT_STEP_DURATION) {
     const ctx = this.getAudioContext();
     const startTime = typeof time === 'number' ? time : ctx.currentTime;
