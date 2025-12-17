@@ -4,7 +4,8 @@
 // instead of synthesized oscillators so the pipeline matches the real asset
 // layout shipped with the app.
 
-import { SoundFont2, GeneratorType } from 'soundfont2';
+import soundfont2 from 'soundfont2';
+const { SoundFont2, GeneratorType, DEFAULT_GENERATOR_VALUES } = soundfont2;
 import { audioContextManager } from './AudioContextManager.js';
 
 const GENERAL_MIDI_PROGRAMS = [
@@ -25,6 +26,22 @@ const GENERAL_MIDI_PROGRAMS = [
 
 const DEFAULT_VELOCITY = 0.75;
 const DEFAULT_STEP_DURATION = 0.32;
+
+export function timecentsToSeconds(timecents = 0) {
+  return Math.pow(2, timecents / 1200);
+}
+
+export function centibelsToGain(centibels = 0) {
+  return Math.pow(10, -centibels / 200);
+}
+
+function getGeneratorValue(generators, type) {
+  const entry = generators?.[type];
+  if (entry && typeof entry.value === 'number') {
+    return entry.value;
+  }
+  return DEFAULT_GENERATOR_VALUES[type];
+}
 
 export class SoundFontEngine {
   constructor() {
@@ -149,21 +166,26 @@ export class SoundFontEngine {
       return;
     }
 
+    const envelope = this.buildEnvelope(keyData, midiNote, amplitude);
+
     const source = ctx.createBufferSource();
     source.buffer = keyData.sampleBuffer;
     source.playbackRate.setValueAtTime(this.getPlaybackRateForKey(keyData, midiNote), startTime);
 
-    if (typeof keyData.loopStart === 'number' && typeof keyData.loopEnd === 'number') {
-      if (keyData.loopEnd > keyData.loopStart) {
-        source.loop = true;
-        source.loopStart = keyData.loopStart;
-        source.loopEnd = keyData.loopEnd;
-      }
+    const shouldLoop =
+      (keyData.sampleMode === 1 || keyData.sampleMode === 3 || keyData.sample?.header?.sampleType === 1) &&
+      typeof keyData.loopStart === 'number' &&
+      typeof keyData.loopEnd === 'number' &&
+      keyData.loopEnd > keyData.loopStart;
+
+    if (shouldLoop) {
+      source.loop = true;
+      source.loopStart = keyData.loopStart;
+      source.loopEnd = keyData.loopEnd;
     }
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(amplitude, startTime + 0.01);
+    this.applyEnvelopeToGain(gain.gain, envelope, startTime);
 
     source.connect(gain).connect(ctx.destination);
     source.start(startTime);
@@ -174,30 +196,38 @@ export class SoundFontEngine {
     this.activeVoices.get(animalId).set(midiNote, {
       source,
       gain,
-      velocity: clampedVelocity
+      velocity: clampedVelocity,
+      envelope,
+      startTime,
+      sampleMode: keyData.sampleMode,
+      baseAmplitude: amplitude
     });
   }
 
   noteOffForAnimal(animalId, midiNote, time) {
     const ctx = this.getAudioContext();
-    const stopTime = typeof time === 'number' ? time : ctx.currentTime + 0.25;
+    const stopTime = typeof time === 'number' ? time : ctx.currentTime;
     const voices = this.activeVoices.get(animalId);
     const voice = voices ? voices.get(midiNote) : null;
 
     if (!voice) return;
 
-    const releaseTime = 0.1;
+    const releaseDuration = Math.max(voice.envelope?.release ?? 0, 0.01);
+    const envelopeValue = this.getEnvelopeValueAtTime(voice, stopTime);
     voice.gain.gain.cancelScheduledValues(stopTime);
-    voice.gain.gain.setValueAtTime(voice.gain.gain.value, stopTime);
-    voice.gain.gain.linearRampToValueAtTime(0, stopTime + releaseTime);
+    voice.gain.gain.setValueAtTime(envelopeValue, stopTime);
+    voice.gain.gain.linearRampToValueAtTime(0, stopTime + releaseDuration);
 
     if (voice.source) {
-      voice.source.stop(stopTime + releaseTime);
+      if (voice.source.loop && voice.sampleMode === 3) {
+        voice.source.loop = false;
+      }
+      voice.source.stop(stopTime + releaseDuration);
     }
     setTimeout(() => {
       voice.source?.disconnect();
       voice.gain.disconnect();
-    }, (stopTime + releaseTime - ctx.currentTime) * 1000);
+    }, (stopTime + releaseDuration - ctx.currentTime) * 1000);
 
     voices.delete(midiNote);
   }
@@ -231,8 +261,22 @@ export class SoundFontEngine {
         this.noteOffForAnimal(animalId, midiNote, now);
         continue;
       }
+      if (!voice.envelope) {
+        voice.gain.gain.cancelScheduledValues(now);
+        voice.gain.gain.setValueAtTime(amplitude, now);
+        voice.baseAmplitude = amplitude;
+        continue;
+      }
+      const previousBase = voice.baseAmplitude || amplitude;
+      const gainRatio = amplitude / previousBase;
+
+      voice.envelope.peakGain *= gainRatio;
+      voice.envelope.sustainGain *= gainRatio;
+      voice.baseAmplitude = amplitude;
+
+      const envelopeValue = this.getEnvelopeValueAtTime(voice, now);
       voice.gain.gain.cancelScheduledValues(now);
-      voice.gain.gain.setValueAtTime(amplitude, now);
+      voice.gain.gain.setValueAtTime(envelopeValue, now);
     }
   }
 
@@ -269,12 +313,130 @@ export class SoundFontEngine {
 
     const sampleBuffer = this.sampleBufferMap.get(keyData.sample) || null;
     const sampleRate = keyData.sample?.header?.sampleRate || this.getAudioContext().sampleRate;
-    const loopStart = keyData.sample?.header?.startLoop / sampleRate;
-    const loopEnd = keyData.sample?.header?.endLoop / sampleRate;
 
-    const hydrated = { ...keyData, sampleBuffer, loopStart, loopEnd };
+    const loopOffsets = this.getLoopOffsets(keyData.generators || {});
+    const loopStart =
+      (keyData.sample?.header?.startLoop + loopOffsets.loopStartOffset || 0) / sampleRate;
+    const loopEnd = (keyData.sample?.header?.endLoop + loopOffsets.loopEndOffset || 0) / sampleRate;
+
+    const hydrated = {
+      ...keyData,
+      sampleBuffer,
+      loopStart,
+      loopEnd,
+      generatorValues: loopOffsets.generatorValues,
+      sampleMode: loopOffsets.sampleMode
+    };
     this.keyCache.set(cacheKey, hydrated);
     return hydrated;
+  }
+
+  getLoopOffsets(generators) {
+    const generatorValues = { ...DEFAULT_GENERATOR_VALUES, ...(generators || {}) };
+    const loopStartOffset =
+      (getGeneratorValue(generatorValues, GeneratorType.StartLoopAddrsOffset) || 0) +
+      (getGeneratorValue(generatorValues, GeneratorType.StartLoopAddrsCoarseOffset) || 0) * 32768;
+    const loopEndOffset =
+      (getGeneratorValue(generatorValues, GeneratorType.EndLoopAddrsOffset) || 0) +
+      (getGeneratorValue(generatorValues, GeneratorType.EndLoopAddrsCoarseOffset) || 0) * 32768;
+    const sampleMode = getGeneratorValue(generatorValues, GeneratorType.SampleModes) || 0;
+
+    return {
+      loopStartOffset,
+      loopEndOffset,
+      sampleMode,
+      generatorValues
+    };
+  }
+
+  buildEnvelope(keyData, midiNote, amplitude) {
+    const generators = keyData.generatorValues || keyData.generators || {};
+    const delay = timecentsToSeconds(getGeneratorValue(generators, GeneratorType.DelayVolEnv));
+    const attack = timecentsToSeconds(getGeneratorValue(generators, GeneratorType.AttackVolEnv));
+    const hold = timecentsToSeconds(
+      getGeneratorValue(generators, GeneratorType.HoldVolEnv) +
+        midiNote * getGeneratorValue(generators, GeneratorType.KeyNumToVolEnvHold)
+    );
+    const decay = timecentsToSeconds(
+      getGeneratorValue(generators, GeneratorType.DecayVolEnv) +
+        midiNote * getGeneratorValue(generators, GeneratorType.KeyNumToVolEnvDecay)
+    );
+    const sustainLevel = centibelsToGain(getGeneratorValue(generators, GeneratorType.SustainVolEnv));
+    const release = timecentsToSeconds(getGeneratorValue(generators, GeneratorType.ReleaseVolEnv));
+    const attenuationGain = centibelsToGain(
+      getGeneratorValue(generators, GeneratorType.InitialAttenuation)
+    );
+
+    const peakGain = amplitude * attenuationGain;
+
+    return {
+      delay,
+      attack,
+      hold,
+      decay,
+      sustainLevel,
+      release,
+      peakGain,
+      sustainGain: peakGain * sustainLevel,
+      attenuationGain
+    };
+  }
+
+  applyEnvelopeToGain(param, envelope, startTime) {
+    const { delay, attack, hold, decay, peakGain, sustainGain } = envelope;
+
+    const delayEnd = startTime + delay;
+    const attackEnd = delayEnd + attack;
+    const holdEnd = attackEnd + hold;
+    const decayEnd = holdEnd + decay;
+
+    param.setValueAtTime(0, startTime);
+    param.setValueAtTime(0, delayEnd);
+
+    if (attack > 0) {
+      param.linearRampToValueAtTime(peakGain, attackEnd);
+    } else {
+      param.setValueAtTime(peakGain, attackEnd);
+    }
+
+    param.setValueAtTime(peakGain, holdEnd);
+
+    if (decay > 0) {
+      param.linearRampToValueAtTime(sustainGain, decayEnd);
+    } else {
+      param.setValueAtTime(sustainGain, decayEnd);
+    }
+
+    param.setValueAtTime(sustainGain, decayEnd);
+  }
+
+  getEnvelopeValueAtTime(voice, time) {
+    const { envelope, startTime } = voice;
+    if (!envelope) return 0;
+
+    const elapsed = Math.max(time - startTime, 0);
+    const { delay, attack, hold, decay, peakGain, sustainGain } = envelope;
+
+    if (elapsed <= delay) return 0;
+
+    const attackEnd = delay + attack;
+    if (elapsed <= attackEnd) {
+      const attackProgress = attackEnd === delay ? 1 : (elapsed - delay) / (attackEnd - delay);
+      return peakGain * attackProgress;
+    }
+
+    const holdEnd = attackEnd + hold;
+    if (elapsed <= holdEnd) {
+      return peakGain;
+    }
+
+    const decayEnd = holdEnd + decay;
+    if (elapsed <= decayEnd) {
+      const decayProgress = decayEnd === holdEnd ? 1 : (elapsed - holdEnd) / (decayEnd - holdEnd);
+      return peakGain - (peakGain - sustainGain) * decayProgress;
+    }
+
+    return sustainGain;
   }
 
   buildSampleBuffers() {
