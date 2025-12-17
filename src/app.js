@@ -90,7 +90,7 @@ class App {
       try {
         await this.soundFontEngine.resumeContext();
         this.updateSoundFontStatus({ loading: true });
-        await this.soundFontEngine.loadSoundFont('/audio/general.sf2');
+        await this.soundFontEngine.loadSoundFont('/audio/GeneralUser_GS_v1.471.sf2');
         this.refreshProgramOptions();
         this.audioReady = true;
 
