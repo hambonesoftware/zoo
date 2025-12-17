@@ -55,6 +55,12 @@ During development you should see:
 - Frame the current animal with **F** and reset the studio camera with **R**; both shortcuts mirror the header buttons.
 - Elephant-specific tuning now exposes tusk length scaling, trunk base offsets (XYZ), and torso ring density/radius/bulge controls; defaults match the original look and Tier B changes rebuild after the debounce.
 
+## Audio assets
+
+- The app fetches the GeneralUser GS soundfont from `/audio/GeneralUser_GS_v1.471.sf2` (served from `public/audio/GeneralUser_GS_v1.471.sf2`) during `setupAudioBootstrap()`.
+- To swap in an updated SoundFont, place your `.sf2` file in `public/audio/` and either keep the same filename or update the fetch path in `src/app.js`.
+- Keep replacement fonts close to the current size (~32 MB) to avoid noticeably longer first-load times or exceeding common static host file size limits.
+
 ## Production build
 
 To create a production build:
@@ -98,4 +104,3 @@ The overlay text and behavior are implemented in `src/app.js` via:
 - `src/worldreal.js` – larger zoo/park world using `WebGPURenderer`.
 - `src/animals/*` – animal registry, generators, behavior, and pens.
 - `WEBGPU_NOTES.md` – extra notes about WebGPU support and testing.
-
