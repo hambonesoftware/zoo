@@ -625,7 +625,11 @@ class App {
     this.controls.update();
 
     // Render the scene
-    this.renderer.render(this.scene, this.camera);
+    if (this.world && typeof this.world.renderFrame === 'function') {
+      this.world.renderFrame();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
 
     if (this.audioReady && this.musicEngine && this.soundFontEngine) {
       const audioCtx = this.soundFontEngine.getAudioContext();

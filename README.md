@@ -49,6 +49,12 @@ During development you should see:
 - The currently selected animal (default: cat) in its pen
 - A debug panel with basic information about pens, bounds, and behavior
 
+## Render modes
+
+- The default `FAST` mode preserves the current Zoo behavior.
+- Enable the `CINEMATIC` mode for higher quality renderer defaults by adding `?cinematic=1` to the URL or setting `window.ZOO_CINEMATIC = true` before the app boots.
+- See [`docs/cinematic.md`](./docs/cinematic.md) for full toggle details, renderer quality settings, lighting rig, hero materials, and diagnostics.
+
 ## Studio controls
 
 - The tuning panel is collapsible and grouped by accordion headers so you can quickly hide whole sections (Global, Skeleton, Torso, Trunk, Tusks, Legs, Materials, Debug).

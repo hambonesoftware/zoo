@@ -5,30 +5,29 @@ import { WebGPURenderer } from '../libs/three.webgpu.js';
 import { OrbitControls } from '../libs/OrbitControls.js';
 import { AnimalStudioPen } from './pens/AnimalStudioPen.js';
 import { AnimalRegistry } from './animals/AnimalRegistry.js';
+import { RENDER_MODES, isCinematic, resolveRenderMode } from './render/renderMode.js';
+import {
+  applyRendererConfig,
+  applyRendererSize,
+  getRendererOptionsForMode,
+  logRendererDiagnostics
+} from './render/rendererConfig.js';
+import { CinematicPost } from './render/CinematicPost.js';
 
-function createRenderer(canvas, preferWebGPU) {
+function createRenderer(canvas, preferWebGPU, rendererOptions = {}) {
   let renderer = null;
+  const { antialias = true, sampleCount = 1 } = rendererOptions;
 
   if (preferWebGPU) {
     try {
-      renderer = new WebGPURenderer({ canvas, antialias: true });
+      renderer = new WebGPURenderer({ canvas, antialias, sampleCount });
     } catch (error) {
       console.warn('[Zoo] Falling back to WebGLRenderer because WebGPU init failed:', error);
     }
   }
 
   if (!renderer) {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  }
-
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
-  if (renderer.shadowMap) {
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer = new THREE.WebGLRenderer({ canvas, antialias });
   }
 
   return renderer;
@@ -49,7 +48,7 @@ function createCanvas(canvasContainer) {
 
 export function createWorld(
   canvasContainer,
-  { preferWebGPU = true, defaultAnimal = 'cat', soundFontEngine = null } = {}
+  { preferWebGPU = true, defaultAnimal = 'cat', soundFontEngine = null, renderMode: initialRenderMode = null } = {}
 ) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xe8ecef);
@@ -60,7 +59,16 @@ export function createWorld(
   camera.lookAt(0, 1, 0);
 
   const canvas = createCanvas(canvasContainer);
-  const renderer = createRenderer(canvas, preferWebGPU);
+  const renderMode = initialRenderMode || resolveRenderMode({ defaultMode: RENDER_MODES.FAST });
+  const rendererOptions = getRendererOptionsForMode(renderMode);
+  const renderer = createRenderer(canvas, preferWebGPU, rendererOptions);
+  const rendererSettings = applyRendererConfig(renderer, renderMode);
+  logRendererDiagnostics(renderer, renderMode, { ...rendererOptions, ...rendererSettings });
+  window.ZOO_RENDER_MODE = renderMode;
+
+  const post = isCinematic(renderMode) && renderer.isWebGPURenderer
+    ? new CinematicPost(renderer, scene, camera, { bloom: { strength: 0.35, threshold: 1.0, radius: 0.85 } })
+    : null;
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enablePan = true;
@@ -78,7 +86,13 @@ export function createWorld(
     target: controls.target.clone()
   };
 
-  const pen = new AnimalStudioPen(scene, {});
+  const pen = new AnimalStudioPen(scene, {
+    shadowMapSize: rendererSettings.shadowMapSize,
+    shadowBias: rendererSettings.shadowBias,
+    shadowNormalBias: rendererSettings.shadowNormalBias,
+    renderer,
+    renderMode
+  });
 
   let activeAnimal = null;
   let activeAnimalId = null;
@@ -90,7 +104,8 @@ export function createWorld(
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    applyRendererSize(renderer, renderMode);
+    post?.setSize(window.innerWidth, window.innerHeight);
   });
 
   function setView(name) {
@@ -278,6 +293,14 @@ export function createWorld(
     pen.update(dt);
   }
 
+  function renderFrame() {
+    if (post) {
+      post.render();
+    } else {
+      renderer.render(scene, camera);
+    }
+  }
+
   setAnimalType(defaultAnimal);
 
   return {
@@ -291,6 +314,7 @@ export function createWorld(
     applyImmediateTuning,
     scheduleRebuild,
     update,
+    renderFrame,
     getDebugInfo,
     getActivePen: () => pen,
     getActiveAnimal: () => activeAnimal,
