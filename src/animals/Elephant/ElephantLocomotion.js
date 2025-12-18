@@ -102,6 +102,10 @@ export class ElephantLocomotion {
     this._footfallListener = null;
     this._footstepListeners = new Set();
     this._legSwingState = {};
+    this._legContactState = {};
+
+    // Track contact metadata so we can fire audio exactly when hooves hit ground.
+    this._footContactInfo = {};
 
     // Body sway offset (world-space) applied as a delta each frame.
     // IMPORTANT: we never hard-set root.position.x anymore (that was snapping the elephant toward x=0).
@@ -129,7 +133,7 @@ export class ElephantLocomotion {
       // Base stride and lift at sizeScale = 1; both scaled by size and walkBlend.
       // strideLengthBase is "half stride" (neutral -> max forward placement in root space).
       strideLengthBase: 0.28,
-      liftHeightBase: 0.11
+      liftHeightBase: 0.14
     };
 
     // Base height of the root bone above ground (populated from rest pose).
@@ -402,10 +406,54 @@ export class ElephantLocomotion {
     const wasSwinging = this._legSwingState[legKey];
     this._legSwingState[legKey] = inSwing;
 
-    // Emit footfall right when we transition from swing -> stance (touchdown).
-    if (wasSwinging === true && !inSwing) {
-      this._emitFootfall(legKey, u, swingDuration);
+    const contactInfo = this._syncFootToGround(leg, target, inSwing);
+    const wasInContact = this._legContactState[legKey] === true;
+    this._legContactState[legKey] = contactInfo.contact;
+
+    // Emit footfall right when the hoof actually meets the ground.
+    if (!inSwing && contactInfo.contact && !wasInContact && wasSwinging === true) {
+      this._emitFootfall(legKey, u, swingDuration, contactInfo);
     }
+  }
+
+  _syncFootToGround(leg, targetLocal, inSwing) {
+    const info = { contact: false, footWorldY: null };
+    if (!leg || !leg.foot) return info;
+
+    // Update matrices so world positions reflect the freshly solved pose.
+    const anchor = leg.upper?.parent;
+    if (anchor?.updateMatrixWorld) {
+      anchor.updateMatrixWorld(true);
+    }
+    if (leg.foot.updateMatrixWorld) {
+      leg.foot.updateMatrixWorld(true);
+    }
+
+    const groundY = this.groundHeight ?? 0;
+    const tolerance = 0.01 * this.sizeScale;
+    const footWorldY = leg.foot.getWorldPosition(this.tempVec2).y;
+    info.footWorldY = footWorldY;
+
+    const belowGround = footWorldY < groundY - tolerance;
+    info.contact = footWorldY <= groundY + tolerance;
+
+    // If the hoof dipped below ground during stance, nudge it back onto the plane.
+    if (!inSwing && belowGround) {
+      const correction = groundY - footWorldY;
+      targetLocal.y += correction;
+      this._solveLegIKFromLocalTarget(leg, targetLocal);
+      if (anchor?.updateMatrixWorld) {
+        anchor.updateMatrixWorld(true);
+      }
+      if (leg.foot.updateMatrixWorld) {
+        leg.foot.updateMatrixWorld(true);
+      }
+      info.footWorldY = leg.foot.getWorldPosition(this.tempVec2).y;
+      info.contact = true;
+    }
+
+    this._footContactInfo[leg.key] = info;
+    return info;
   }
 
   // Stride & speed helpers so translational speed matches the leg cycle.
@@ -451,7 +499,7 @@ export class ElephantLocomotion {
     };
   }
 
-  _emitFootfall(legKey, phase, swingDuration) {
+  _emitFootfall(legKey, phase, swingDuration, contactInfo = {}) {
     const strideSpeed = this._gaitFrequency;
     const strideDuration = strideSpeed > 0 ? 1 / strideSpeed : 0;
     const stancePortion = THREE.MathUtils.clamp(1 - swingDuration, 0, 1);
@@ -462,6 +510,9 @@ export class ElephantLocomotion {
     const limbId = this._legKeyToLimbId(legKey);
     const phaseTime = strideDuration * phase;
     const timestamp = this._time + phaseTime;
+
+    const contactHeight =
+      typeof contactInfo.footWorldY === 'number' ? contactInfo.footWorldY - this.groundHeight : null;
 
     const payload = {
       animalId: this.elephant?.id || 'elephant',
@@ -487,6 +538,9 @@ export class ElephantLocomotion {
       stepDuration,
       swingDuration,
       strideLength,
+      groundHeight: this.groundHeight,
+      footWorldY: contactInfo.footWorldY ?? null,
+      contactHeight,
       timestamp
     };
 

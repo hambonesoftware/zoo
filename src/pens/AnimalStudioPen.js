@@ -1,6 +1,6 @@
 // src/pens/AnimalStudioPen.js
 
-import * as THREE from '../libs/three.module.js';
+import * as THREE from '../../libs/three.module.js';
 import { applyHeroMaterialProfile } from '../render/HeroMaterialProfiles.js';
 import { createLightingRig } from '../render/LightingRig.js';
 import { RENDER_MODES, isCinematic } from '../render/renderMode.js';

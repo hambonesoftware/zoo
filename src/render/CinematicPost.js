@@ -1,4 +1,4 @@
-import * as THREE from '../libs/three.module.js';
+import * as THREE from '../../libs/three.module.js';
 
 const DEFAULT_BLOOM_SETTINGS = {
   threshold: 1.0,
