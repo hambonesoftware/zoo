@@ -1,6 +1,9 @@
 // src/pens/AnimalStudioPen.js
 
-import * as THREE from 'three';
+import * as THREE from '../libs/three.module.js';
+import { applyHeroMaterialProfile } from '../render/HeroMaterialProfiles.js';
+import { createLightingRig } from '../render/LightingRig.js';
+import { RENDER_MODES, isCinematic } from '../render/renderMode.js';
 
 /**
  * AnimalStudioPen builds a shared "studio" shell (corner walls, grids, axes,
@@ -11,7 +14,16 @@ export class AnimalStudioPen {
     this.scene = scene;
     this.options = options;
 
+    this.renderMode = options.renderMode || RENDER_MODES.FAST;
+    this.renderer = options.renderer || null;
+    this.enableHeroMaterials = options.enableHeroMaterials ?? true;
+    this.facetedHint = options.facetedHint ?? false;
+
     this.label = options.label || 'Animal Studio';
+
+    this.shadowMapSize = options.shadowMapSize;
+    this.shadowBias = options.shadowBias;
+    this.shadowNormalBias = options.shadowNormalBias;
 
     this.radius = options.radius || 2.0;
     this.padHeight = options.padHeight || 0.17;
@@ -186,37 +198,30 @@ export class AnimalStudioPen {
     // ------------------------------------------------
     // 4) STUDIO LIGHTING (GLOBAL + KEY / FILL / RIM)
     // ------------------------------------------------
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x404040, 0.85);
-    hemiLight.name = 'StudioHemiLight';
-    this.group.add(hemiLight);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
-    ambientLight.name = 'StudioAmbientLight';
-    this.group.add(ambientLight);
-
     this.lightTarget = new THREE.Object3D();
     this.lightTarget.position.set(0, this.padHeight + 1.2, 0);
     this.lightTarget.name = 'StudioLightTarget';
     this.group.add(this.lightTarget);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.7);
-    keyLight.position.set(4, 5, 4);
-    keyLight.target = this.lightTarget;
-    keyLight.castShadow = true;
-    keyLight.name = 'StudioKeyLight';
-    this.group.add(keyLight);
+    this.lightingRig = createLightingRig({
+      mode: this.renderMode,
+      target: this.lightTarget,
+      shadowSettings: {
+        mapSize: this.shadowMapSize,
+        bias: this.shadowBias,
+        normalBias: this.shadowNormalBias
+      },
+      renderer: this.renderer
+    });
 
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.45);
-    fillLight.position.set(-3, 3, 2);
-    fillLight.target = this.lightTarget;
-    fillLight.name = 'StudioFillLight';
-    this.group.add(fillLight);
+    if (this.lightingRig?.group) {
+      this.group.add(this.lightingRig.group);
+    }
 
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
-    rimLight.position.set(-2, 4.5, -4);
-    rimLight.target = this.lightTarget;
-    rimLight.name = 'StudioRimLight';
-    this.group.add(rimLight);
+    this.environmentHandle = this.lightingRig?.environment || null;
+    if (isCinematic(this.renderMode) && this.environmentHandle?.map) {
+      this.scene.environment = this.environmentHandle.map;
+    }
 
     // ------------------------------------------------
     // 5) BOUNDING BOX (MEASUREMENT HELPER)
@@ -273,6 +278,7 @@ export class AnimalStudioPen {
     }
 
     this._refreshBoundingBoxHelper();
+    this._applyHeroMaterials();
   }
 
   unmountAnimal() {
@@ -304,6 +310,34 @@ export class AnimalStudioPen {
     this.bboxHelper.name = 'StudioBBoxHelper';
     this.bboxHelper.visible = this.showBoundingBox;
     this.group.add(this.bboxHelper);
+  }
+
+  _applyHeroMaterials() {
+    if (!this.animalRoot || !this.enableHeroMaterials) return;
+
+    const inferredFaceted = this.facetedHint || this._looksFaceted();
+    applyHeroMaterialProfile(this.animalRoot, {
+      mode: this.renderMode,
+      envMap: this.environmentHandle?.map || this.scene?.environment || null,
+      faceted: inferredFaceted
+    });
+  }
+
+  _looksFaceted() {
+    let faceted = false;
+    if (!this.animalRoot) return this.facetedHint;
+    this.animalRoot.traverse((child) => {
+      if (child.isMesh) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        for (const mat of materials) {
+          if (mat && mat.flatShading === true) {
+            faceted = true;
+            return;
+          }
+        }
+      }
+    });
+    return faceted || this.facetedHint;
   }
 
   getExportRoot() {
