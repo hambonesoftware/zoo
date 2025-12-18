@@ -1,4 +1,4 @@
-import * as THREE from '../libs/three.module.js';
+import * as THREE from '../../libs/three.module.js';
 import { RENDER_MODES } from './renderMode.js';
 
 const MODE_CONFIG = {
