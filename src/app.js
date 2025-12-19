@@ -656,7 +656,20 @@ class App {
         const span = Number.isFinite(data.span) ? data.span : '-';
         const axis =
           typeof data.axisDistance === 'number' ? data.axisDistance.toFixed(2) : '-';
-        return `${label} ring/seg:${ring}/${segment} span:${span} axis:${axis}`;
+        const axisDebug = data.axisProjection || {};
+        const axisClosest =
+          typeof axisDebug.closestAxisDistance === 'number'
+            ? axisDebug.closestAxisDistance.toFixed(2)
+            : '-';
+        const axisSelected =
+          typeof axisDebug.selectedAxisDistance === 'number'
+            ? axisDebug.selectedAxisDistance.toFixed(2)
+            : '-';
+        const projDist =
+          typeof axisDebug.projectionDistance === 'number'
+            ? axisDebug.projectionDistance.toFixed(3)
+            : '-';
+        return `${label} ring/seg:${ring}/${segment} span:${span} axis:${axis} sel:${axisSelected} closest:${axisClosest} projΔ:${projDist}`;
       };
 
       if (this.debugFields.animal) {
