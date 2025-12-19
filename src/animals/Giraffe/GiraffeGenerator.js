@@ -105,9 +105,10 @@ export class GiraffeGenerator {
 
     // === 1. Continuous Spine + Neck body ===
     // One tube from spine_base → spine_mid → spine_upper → neck_0..neck_6
+    const spineBones = ['spine_base', 'spine_mid', 'spine_upper'];
     const { geometry: spineNeckGeometryRaw, ringData: spineNeckRingData } =
       generateSpineTorsoGeometry(skeleton, {
-        spineBones: ['spine_base', 'spine_mid', 'spine_upper'],
+        spineBones,
         neckBones,
         spineRadii: [0.62 * torsoScale, 0.7 * torsoScale, 0.55 * torsoScale],
         neckRadii: [
@@ -410,9 +411,17 @@ export class GiraffeGenerator {
         return center.multiplyScalar(1 / indices.length);
       };
 
-      const findClosestRingIndex = (target) => {
+      const findClosestRingIndex = (target, minRingIndex = 0, maxRingIndex = null) => {
         const ringCenters = spineNeckRingData.ringCenters;
         if (!ringCenters || ringCenters.length === 0) return 0;
+        const lastIndex = ringCenters.length - 1;
+        const safeMin = THREE.MathUtils.clamp(minRingIndex, 0, lastIndex);
+        const safeMax = THREE.MathUtils.clamp(
+          maxRingIndex ?? lastIndex,
+          safeMin,
+          lastIndex
+        );
+        if (safeMin === safeMax) return safeMin;
 
         const cumulative = [0];
         for (let i = 1; i < ringCenters.length; i += 1) {
@@ -422,7 +431,7 @@ export class GiraffeGenerator {
 
         let closestAxisDistance = 0;
         let closestDistSq = Infinity;
-        for (let i = 0; i < ringCenters.length - 1; i += 1) {
+        for (let i = safeMin; i < safeMax; i += 1) {
           const start = ringCenters[i];
           const end = ringCenters[i + 1];
           const segment = end.clone().sub(start);
@@ -447,13 +456,13 @@ export class GiraffeGenerator {
 
         let bestIndex = 0;
         let bestDist = Infinity;
-        ringCenters.forEach((center, index) => {
+        for (let index = safeMin; index <= safeMax; index += 1) {
           const dist = Math.abs(cumulative[index] - closestAxisDistance);
           if (dist < bestDist) {
             bestDist = dist;
             bestIndex = index;
           }
-        });
+        }
         return bestIndex;
       };
 
@@ -614,7 +623,14 @@ export class GiraffeGenerator {
         return bridgeGeometry;
       };
 
-      const blendLeg = (legGeometry, legBones, targetBoneName, blendSpanScale = 1) => {
+      const blendLeg = (
+        legGeometry,
+        legBones,
+        targetBoneName,
+        blendSpanScale = 1,
+        minRingIndex = 0,
+        maxRingIndex = spineNeckRingData.ringCenters.length - 1
+      ) => {
         if (limbSides !== torsoSegments) {
           return;
         }
@@ -622,7 +638,7 @@ export class GiraffeGenerator {
         const legRootIndices = getLegRootIndices();
         let legRootCenter = getRingCenterFromGeometry(legGeometry, legRootIndices);
         const targetPosition = samplePosition(targetBoneName) || legRootCenter;
-        const ringIndex = findClosestRingIndex(targetPosition);
+        const ringIndex = findClosestRingIndex(targetPosition, minRingIndex, maxRingIndex);
 
         const torsoRing = sampleTorsoRingSurface(
           spineNeckGeometry,
@@ -726,29 +742,53 @@ export class GiraffeGenerator {
             : 0.7
       };
 
+      const spineRingMax = spineNeckRingData.ringCenters.length - 1;
+      const getSpineRingIndex = (boneName, fallbackIndex) => {
+        const bonePosition = samplePosition(boneName);
+        return bonePosition
+          ? findClosestRingIndex(bonePosition, 0, spineRingMax)
+          : fallbackIndex;
+      };
+      const spineBaseRingIndex = getSpineRingIndex('spine_base', 0);
+      const spineMidRingIndex = getSpineRingIndex('spine_mid', spineRingMax);
+      const spineUpperRingIndex = getSpineRingIndex('spine_upper', spineRingMax);
+      const frontLegMaxRingIndex = Math.max(spineBaseRingIndex, spineUpperRingIndex);
+      const rearLegMaxRingIndex = Math.min(
+        frontLegMaxRingIndex,
+        Math.max(spineBaseRingIndex, spineMidRingIndex)
+      );
+
       blendLeg(
         fl,
         ['front_left_shoulder', 'front_left_upper'],
         'front_left_shoulder',
-        legBranchBlendSpanScale.frontLeft
+        legBranchBlendSpanScale.frontLeft,
+        0,
+        frontLegMaxRingIndex
       );
       blendLeg(
         fr,
         ['front_right_shoulder', 'front_right_upper'],
         'front_right_shoulder',
-        legBranchBlendSpanScale.frontRight
+        legBranchBlendSpanScale.frontRight,
+        0,
+        frontLegMaxRingIndex
       );
       blendLeg(
         bl,
         ['back_left_hip', 'back_left_upper'],
         'back_left_hip',
-        legBranchBlendSpanScale.backLeft
+        legBranchBlendSpanScale.backLeft,
+        0,
+        rearLegMaxRingIndex
       );
       blendLeg(
         br,
         ['back_right_hip', 'back_right_upper'],
         'back_right_hip',
-        legBranchBlendSpanScale.backRight
+        legBranchBlendSpanScale.backRight,
+        0,
+        rearLegMaxRingIndex
       );
 
       spineNeckGeometry.computeVertexNormals();
