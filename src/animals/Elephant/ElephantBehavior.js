@@ -95,7 +95,13 @@ export class ElephantBehavior {
 
     this._locomotionFootstepUnsub = this.locomotion.onFootstep((evt) => {
       this._ensureDefaultFootfallHandler();
-      this._footstepHandlers.forEach((handler) => handler(evt));
+      const audioTime = this._getAudioTime();
+      const payload = {
+        ...evt,
+        locomotionTime: typeof evt?.timestamp === 'number' ? evt.timestamp : undefined,
+        timestamp: audioTime
+      };
+      this._footstepHandlers.forEach((handler) => handler(payload));
     });
   }
 
