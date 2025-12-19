@@ -426,7 +426,18 @@ export class GiraffeGenerator {
 
       const findClosestRingIndex = (target, minRingIndex = 0, maxRingIndex = null) => {
         const ringCenters = spineNeckRingData.ringCenters;
-        if (!ringCenters || ringCenters.length === 0) return 0;
+        if (!ringCenters || ringCenters.length === 0) {
+          return {
+            ringIndex: 0,
+            debug: {
+              closestAxisDistance: 0,
+              closestDistSq: null,
+              projection: null,
+              projectionDistance: null,
+              selectedAxisDistance: null
+            }
+          };
+        }
         const lastIndex = ringCenters.length - 1;
         const safeMin = THREE.MathUtils.clamp(minRingIndex, 0, lastIndex);
         const safeMax = THREE.MathUtils.clamp(
@@ -434,7 +445,6 @@ export class GiraffeGenerator {
           safeMin,
           lastIndex
         );
-        if (safeMin === safeMax) return safeMin;
 
         const cumulative = [0];
         for (let i = 1; i < ringCenters.length; i += 1) {
@@ -442,8 +452,23 @@ export class GiraffeGenerator {
             cumulative[i - 1] + ringCenters[i].distanceTo(ringCenters[i - 1]);
         }
 
+        if (safeMin === safeMax) {
+          return {
+            ringIndex: safeMin,
+            debug: {
+              closestAxisDistance: cumulative[safeMin] ?? 0,
+              closestDistSq: null,
+              projection: null,
+              projectionDistance: null,
+              selectedAxisDistance: cumulative[safeMin] ?? null
+            }
+          };
+        }
+
         let closestAxisDistance = 0;
         let closestDistSq = Infinity;
+        let closestProjection = null;
+        let closestProjectionDistance = null;
         for (let i = safeMin; i < safeMax; i += 1) {
           const start = ringCenters[i];
           const end = ringCenters[i + 1];
@@ -464,6 +489,8 @@ export class GiraffeGenerator {
             closestDistSq = distSq;
             closestAxisDistance =
               cumulative[i] + t * Math.sqrt(segmentLengthSq);
+            closestProjection = projection.clone();
+            closestProjectionDistance = Math.sqrt(distSq);
           }
         }
 
@@ -476,7 +503,16 @@ export class GiraffeGenerator {
             bestIndex = index;
           }
         }
-        return bestIndex;
+        return {
+          ringIndex: bestIndex,
+          debug: {
+            closestAxisDistance,
+            closestDistSq,
+            projection: closestProjection ? closestProjection.toArray() : null,
+            projectionDistance: closestProjectionDistance,
+            selectedAxisDistance: cumulative[bestIndex] ?? null
+          }
+        };
       };
 
       const clampRingIndex = (index) =>
@@ -640,7 +676,7 @@ export class GiraffeGenerator {
         legName,
         legGeometry,
         legBones,
-        ringIndex,
+        ringMatch,
         blendSpanScale = 1,
         minRingIndex = 0,
         maxRingIndex = spineNeckRingData.ringCenters.length - 1
@@ -651,8 +687,12 @@ export class GiraffeGenerator {
 
         const legRootIndices = getLegRootIndices();
         let legRootCenter = getRingCenterFromGeometry(legGeometry, legRootIndices);
+        const ringSelection =
+          ringMatch && typeof ringMatch === 'object'
+            ? ringMatch
+            : { ringIndex: ringMatch, debug: null };
         const clampedRingIndex = THREE.MathUtils.clamp(
-          ringIndex,
+          ringSelection.ringIndex,
           minRingIndex,
           maxRingIndex
         );
@@ -735,7 +775,8 @@ export class GiraffeGenerator {
           blendSpanScale,
           span,
           legSegmentOffset,
-          axisDistance: ringAxisDistances[clampedRingIndex] ?? null
+          axisDistance: ringAxisDistances[clampedRingIndex] ?? null,
+          axisProjection: ringSelection.debug
         };
 
         removeTorsoFaces(clampedRingIndex, segmentIndices);
@@ -772,50 +813,57 @@ export class GiraffeGenerator {
       };
 
       const spineRingMax = spineNeckRingData.ringCenters.length - 1;
-      const getSpineRingIndex = (boneName, fallbackIndex) => {
+      const getSpineRingMatch = (boneName, fallbackIndex) => {
         const bonePosition = samplePosition(boneName);
         return bonePosition
           ? findClosestRingIndex(bonePosition, 0, spineRingMax)
-          : fallbackIndex;
+          : { ringIndex: fallbackIndex, debug: null };
       };
-      const spineBaseRingIndex = getSpineRingIndex('spine_base', 0);
-      const spineMidRingIndex = getSpineRingIndex('spine_mid', spineRingMax);
-      const spineUpperRingIndex = getSpineRingIndex('spine_upper', spineRingMax);
+      const spineBaseMatch = getSpineRingMatch('spine_base', 0);
+      const spineMidMatch = getSpineRingMatch('spine_mid', spineRingMax);
+      const spineUpperMatch = getSpineRingMatch('spine_upper', spineRingMax);
+      const spineBaseRingIndex = spineBaseMatch.ringIndex;
+      const spineMidRingIndex = spineMidMatch.ringIndex;
+      const spineUpperRingIndex = spineUpperMatch.ringIndex;
       const frontLegMaxRingIndex = Math.max(spineBaseRingIndex, spineUpperRingIndex);
       const rearLegMaxRingIndex = Math.min(
         frontLegMaxRingIndex,
         Math.max(spineBaseRingIndex, spineMidRingIndex)
       );
-      const getLegRingIndex = (boneName, fallbackIndex, minRingIndex, maxRingIndex) => {
+      const getLegRingMatch = (boneName, fallbackIndex, minRingIndex, maxRingIndex) => {
         const bonePosition = samplePosition(boneName);
         return bonePosition
           ? findClosestRingIndex(bonePosition, minRingIndex, maxRingIndex)
-          : fallbackIndex;
+          : { ringIndex: fallbackIndex, debug: null };
       };
-      const frontLeftRingIndex = getLegRingIndex(
+      const frontLeftMatch = getLegRingMatch(
         'front_left_shoulder',
         frontLegMaxRingIndex,
         0,
         frontLegMaxRingIndex
       );
-      const frontRightRingIndex = getLegRingIndex(
+      const frontRightMatch = getLegRingMatch(
         'front_right_shoulder',
         frontLegMaxRingIndex,
         0,
         frontLegMaxRingIndex
       );
-      const backLeftRingIndex = getLegRingIndex(
+      const backLeftMatch = getLegRingMatch(
         'back_left_hip',
         rearLegMaxRingIndex,
         0,
         rearLegMaxRingIndex
       );
-      const backRightRingIndex = getLegRingIndex(
+      const backRightMatch = getLegRingMatch(
         'back_right_hip',
         rearLegMaxRingIndex,
         0,
         rearLegMaxRingIndex
       );
+      const frontLeftRingIndex = frontLeftMatch.ringIndex;
+      const frontRightRingIndex = frontRightMatch.ringIndex;
+      const backLeftRingIndex = backLeftMatch.ringIndex;
+      const backRightRingIndex = backRightMatch.ringIndex;
       const frontRingIndex = Math.round((frontLeftRingIndex + frontRightRingIndex) * 0.5);
       const rearRingIndex = Math.round((backLeftRingIndex + backRightRingIndex) * 0.5);
       const legRingSeparation = Math.abs(frontRingIndex - rearRingIndex);
@@ -850,7 +898,7 @@ export class GiraffeGenerator {
         'frontLeft',
         fl,
         ['front_left_shoulder', 'front_left_upper'],
-        frontLeftRingIndex,
+        frontLeftMatch,
         frontBlendSpanScale,
         0,
         frontLegMaxRingIndex
@@ -859,7 +907,7 @@ export class GiraffeGenerator {
         'frontRight',
         fr,
         ['front_right_shoulder', 'front_right_upper'],
-        frontRightRingIndex,
+        frontRightMatch,
         frontRightBlendSpanScale,
         0,
         frontLegMaxRingIndex
@@ -868,7 +916,7 @@ export class GiraffeGenerator {
         'backLeft',
         bl,
         ['back_left_hip', 'back_left_upper'],
-        backLeftRingIndex,
+        backLeftMatch,
         backLeftBlendSpanScale,
         0,
         rearLegMaxRingIndex
@@ -877,7 +925,7 @@ export class GiraffeGenerator {
         'backRight',
         br,
         ['back_right_hip', 'back_right_upper'],
-        backRightRingIndex,
+        backRightMatch,
         backRightBlendSpanScale,
         0,
         rearLegMaxRingIndex
