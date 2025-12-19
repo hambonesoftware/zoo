@@ -190,8 +190,10 @@ export class ElephantLocomotion {
     const bbox = new THREE.Box3().setFromObject(mesh);
     const minY = bbox.min.y;
 
-    // Assume groundHeight (world) is at 0 for the ElephantPen.
-    this.groundHeight = 0;
+    // Align ground height with the studio pad (or default to 0).
+    const envGround =
+      typeof this.environment?.groundHeight === 'number' ? this.environment.groundHeight : 0;
+    this.groundHeight = envGround;
 
     // Root initial Y is chosen so that the lowest point of the Elephant sits on ground.
     const worldRootY = root.getWorldPosition(new THREE.Vector3()).y;
