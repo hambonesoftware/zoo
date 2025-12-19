@@ -131,6 +131,12 @@ export class GiraffeGenerator {
       });
 
     const spineNeckGeometry = ensureSkinnedGeometry(spineNeckGeometryRaw, 'spine_base');
+    const spineRingCount =
+      spineBones.length + (spineBones.length - 1) * neckRingsPerSegment;
+    const spineRingMax = Math.min(
+      spineRingCount - 1,
+      spineNeckRingData.ringCenters.length - 1
+    );
 
     // === 2. Head ===
     const neckTip = samplePosition(neckTipName);
@@ -812,7 +818,6 @@ export class GiraffeGenerator {
             : 0.7
       };
 
-      const spineRingMax = spineNeckRingData.ringCenters.length - 1;
       const getSpineRingMatch = (boneName, fallbackIndex) => {
         const bonePosition = samplePosition(boneName);
         return bonePosition
@@ -840,13 +845,13 @@ export class GiraffeGenerator {
         'front_left_shoulder',
         frontLegMaxRingIndex,
         0,
-        frontLegMaxRingIndex
+        spineRingMax
       );
       const frontRightMatch = getLegRingMatch(
         'front_right_shoulder',
         frontLegMaxRingIndex,
         0,
-        frontLegMaxRingIndex
+        spineRingMax
       );
       const backLeftMatch = getLegRingMatch(
         'back_left_hip',
@@ -901,7 +906,7 @@ export class GiraffeGenerator {
         frontLeftMatch,
         frontBlendSpanScale,
         0,
-        frontLegMaxRingIndex
+        spineRingMax
       );
       blendLeg(
         'frontRight',
@@ -910,7 +915,7 @@ export class GiraffeGenerator {
         frontRightMatch,
         frontRightBlendSpanScale,
         0,
-        frontLegMaxRingIndex
+        spineRingMax
       );
       blendLeg(
         'backLeft',
