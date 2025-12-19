@@ -52,6 +52,7 @@ export function generateTorsoGeometry(skeleton, options = {}) {
     typeof options.lowPolyWeldTolerance === 'number' && options.lowPolyWeldTolerance > 0
       ? options.lowPolyWeldTolerance
       : 0;
+  const includeRingData = options.includeRingData === true;
 
   const radiusProfile =
     typeof options.radiusProfile === 'function' ? options.radiusProfile : null;
@@ -234,7 +235,7 @@ export function generateTorsoGeometry(skeleton, options = {}) {
 
   const { spineEntries, radiiEntries } = densify(spineForBuild, radiiForBuild, ringsPerSegment);
 
-  const geometry = buildTorsoFromSpine(
+  const { geometry, ringData } = buildTorsoFromSpine(
     spineEntries,
     radiiEntries,
     sides,
@@ -244,7 +245,7 @@ export function generateTorsoGeometry(skeleton, options = {}) {
     rumpBulgeDepth
   );
 
-  if (lowPoly && lowPolyWeldTolerance > 0) {
+  if (lowPoly && lowPolyWeldTolerance > 0 && !includeRingData) {
     // For low-poly mode, optionally weld nearby vertices to create larger
     // facets and recompute normals for flat shading.
     geometry.deleteAttribute('normal');
@@ -254,6 +255,10 @@ export function generateTorsoGeometry(skeleton, options = {}) {
     );
     welded.computeVertexNormals();
     return welded;
+  }
+
+  if (includeRingData) {
+    return { geometry, ringData };
   }
 
   return geometry;
@@ -534,5 +539,16 @@ function buildTorsoFromSpine(
     normalAttr.needsUpdate = true;
   }
 
-  return geometry;
+  return {
+    geometry,
+    ringData: {
+      ringCenters: points.map((p) => p.clone()),
+      ringNormals: frameNormals.map((n) => n.clone()),
+      ringBinormals: frameBinormals.map((b) => b.clone()),
+      ringTangents: tangents.map((t) => t.clone()),
+      ringStarts,
+      segments,
+      rings
+    }
+  };
 }
