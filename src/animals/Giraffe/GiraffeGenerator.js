@@ -413,20 +413,42 @@ export class GiraffeGenerator {
       const findClosestRingIndex = (target) => {
         const ringCenters = spineNeckRingData.ringCenters;
         if (!ringCenters || ringCenters.length === 0) return 0;
-        const axisStart = ringCenters[0];
-        const axisEnd = ringCenters[ringCenters.length - 1];
-        const axisDir = axisEnd.clone().sub(axisStart);
-        if (axisDir.lengthSq() < 1e-6) {
-          return 0;
+
+        const cumulative = [0];
+        for (let i = 1; i < ringCenters.length; i += 1) {
+          cumulative[i] =
+            cumulative[i - 1] + ringCenters[i].distanceTo(ringCenters[i - 1]);
         }
-        axisDir.normalize();
-        const targetAxis = target.clone().sub(axisStart).dot(axisDir);
+
+        let closestAxisDistance = 0;
+        let closestDistSq = Infinity;
+        for (let i = 0; i < ringCenters.length - 1; i += 1) {
+          const start = ringCenters[i];
+          const end = ringCenters[i + 1];
+          const segment = end.clone().sub(start);
+          const segmentLengthSq = segment.lengthSq();
+          if (segmentLengthSq < 1e-6) {
+            continue;
+          }
+          const toTarget = target.clone().sub(start);
+          const t = THREE.MathUtils.clamp(
+            toTarget.dot(segment) / segmentLengthSq,
+            0,
+            1
+          );
+          const projection = start.clone().add(segment.multiplyScalar(t));
+          const distSq = projection.distanceToSquared(target);
+          if (distSq < closestDistSq) {
+            closestDistSq = distSq;
+            closestAxisDistance =
+              cumulative[i] + t * Math.sqrt(segmentLengthSq);
+          }
+        }
 
         let bestIndex = 0;
         let bestDist = Infinity;
         ringCenters.forEach((center, index) => {
-          const centerAxis = center.clone().sub(axisStart).dot(axisDir);
-          const dist = Math.abs(centerAxis - targetAxis);
+          const dist = Math.abs(cumulative[index] - closestAxisDistance);
           if (dist < bestDist) {
             bestDist = dist;
             bestIndex = index;
@@ -685,10 +707,49 @@ export class GiraffeGenerator {
         }
       };
 
-      blendLeg(fl, ['front_left_shoulder', 'front_left_upper'], 'spine_mid', 1);
-      blendLeg(fr, ['front_right_shoulder', 'front_right_upper'], 'spine_mid', 1);
-      blendLeg(bl, ['back_left_hip', 'back_left_upper'], 'back_left_hip', 0.75);
-      blendLeg(br, ['back_right_hip', 'back_right_upper'], 'back_right_hip', 0.75);
+      const legBranchBlendSpanScale = {
+        frontLeft:
+          typeof options.frontLeftBranchBlendSpan === 'number'
+            ? options.frontLeftBranchBlendSpan
+            : 1,
+        frontRight:
+          typeof options.frontRightBranchBlendSpan === 'number'
+            ? options.frontRightBranchBlendSpan
+            : 1,
+        backLeft:
+          typeof options.backLeftBranchBlendSpan === 'number'
+            ? options.backLeftBranchBlendSpan
+            : 0.7,
+        backRight:
+          typeof options.backRightBranchBlendSpan === 'number'
+            ? options.backRightBranchBlendSpan
+            : 0.7
+      };
+
+      blendLeg(
+        fl,
+        ['front_left_shoulder', 'front_left_upper'],
+        'front_left_shoulder',
+        legBranchBlendSpanScale.frontLeft
+      );
+      blendLeg(
+        fr,
+        ['front_right_shoulder', 'front_right_upper'],
+        'front_right_shoulder',
+        legBranchBlendSpanScale.frontRight
+      );
+      blendLeg(
+        bl,
+        ['back_left_hip', 'back_left_upper'],
+        'back_left_hip',
+        legBranchBlendSpanScale.backLeft
+      );
+      blendLeg(
+        br,
+        ['back_right_hip', 'back_right_upper'],
+        'back_right_hip',
+        legBranchBlendSpanScale.backRight
+      );
 
       spineNeckGeometry.computeVertexNormals();
       fl.computeVertexNormals();
