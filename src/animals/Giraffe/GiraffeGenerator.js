@@ -430,8 +430,18 @@ export class GiraffeGenerator {
         return center.multiplyScalar(1 / indices.length);
       };
 
-      const findClosestRingIndex = (target, minRingIndex = 0, maxRingIndex = null) => {
-        const ringCenters = spineNeckRingData.ringCenters;
+      const torsoRingCenters = (spineNeckRingData.ringCenters || []).slice(
+        0,
+        spineRingMax + 1
+      );
+      const torsoRingMax = Math.max(0, torsoRingCenters.length - 1);
+
+      const findClosestRingIndex = (
+        target,
+        ringCenters,
+        minRingIndex = 0,
+        maxRingIndex = null
+      ) => {
         if (!ringCenters || ringCenters.length === 0) {
           return {
             ringIndex: 0,
@@ -821,7 +831,12 @@ export class GiraffeGenerator {
       const getSpineRingMatch = (boneName, fallbackIndex) => {
         const bonePosition = samplePosition(boneName);
         return bonePosition
-          ? findClosestRingIndex(bonePosition, 0, spineRingMax)
+          ? findClosestRingIndex(
+              bonePosition,
+              spineNeckRingData.ringCenters,
+              0,
+              spineRingMax
+            )
           : { ringIndex: fallbackIndex, debug: null };
       };
       const spineBaseMatch = getSpineRingMatch('spine_base', 0);
@@ -835,20 +850,31 @@ export class GiraffeGenerator {
         frontLegMaxRingIndex,
         Math.max(spineBaseRingIndex, spineMidRingIndex)
       );
-      const frontLegRingWindow =
+      const frontLegRingWindow = Math.min(
+        1,
         typeof options.frontLegRingWindow === 'number'
           ? Math.round(options.frontLegRingWindow)
-          : 2;
+          : 1
+      );
       const rearLegRingWindow =
         typeof options.rearLegRingWindow === 'number'
           ? Math.round(options.rearLegRingWindow)
           : 2;
       const shoulderReferenceMatch = (() => {
-        const shoulderPosition =
-          samplePosition('front_left_shoulder') ||
-          samplePosition('front_right_shoulder');
-        if (shoulderPosition) {
-          return findClosestRingIndex(shoulderPosition, 0, spineRingMax);
+        const shoulderPositions = [
+          samplePosition('front_left_shoulder'),
+          samplePosition('front_right_shoulder')
+        ].filter(Boolean);
+        if (shoulderPositions.length) {
+          const matches = shoulderPositions.map((position) =>
+            findClosestRingIndex(position, torsoRingCenters, 0, torsoRingMax)
+          );
+          return matches.reduce((best, current) => {
+            if (!best) return current;
+            const bestDistance = best.debug?.closestDistSq ?? Infinity;
+            const currentDistance = current.debug?.closestDistSq ?? Infinity;
+            return currentDistance < bestDistance ? current : best;
+          }, null);
         }
         return spineMidMatch;
       })();
@@ -867,7 +893,12 @@ export class GiraffeGenerator {
         const hipPosition =
           samplePosition('back_left_hip') || samplePosition('back_right_hip');
         if (hipPosition) {
-          return findClosestRingIndex(hipPosition, 0, spineRingMax);
+          return findClosestRingIndex(
+            hipPosition,
+            spineNeckRingData.ringCenters,
+            0,
+            spineRingMax
+          );
         }
         return spineBaseMatch;
       })();
@@ -885,7 +916,12 @@ export class GiraffeGenerator {
       const getLegRingMatch = (boneName, fallbackIndex, minRingIndex, maxRingIndex) => {
         const bonePosition = samplePosition(boneName);
         return bonePosition
-          ? findClosestRingIndex(bonePosition, minRingIndex, maxRingIndex)
+          ? findClosestRingIndex(
+              bonePosition,
+              spineNeckRingData.ringCenters,
+              minRingIndex,
+              maxRingIndex
+            )
           : { ringIndex: fallbackIndex, debug: null };
       };
       const frontLeftMatch = getLegRingMatch(
