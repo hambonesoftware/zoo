@@ -835,6 +835,53 @@ export class GiraffeGenerator {
         frontLegMaxRingIndex,
         Math.max(spineBaseRingIndex, spineMidRingIndex)
       );
+      const frontLegRingWindow =
+        typeof options.frontLegRingWindow === 'number'
+          ? Math.round(options.frontLegRingWindow)
+          : 2;
+      const rearLegRingWindow =
+        typeof options.rearLegRingWindow === 'number'
+          ? Math.round(options.rearLegRingWindow)
+          : 2;
+      const shoulderReferenceMatch = (() => {
+        const shoulderPosition =
+          samplePosition('front_left_shoulder') ||
+          samplePosition('front_right_shoulder');
+        if (shoulderPosition) {
+          return findClosestRingIndex(shoulderPosition, 0, spineRingMax);
+        }
+        return spineMidMatch;
+      })();
+      const shoulderRingIndex = shoulderReferenceMatch.ringIndex;
+      const frontBandMin = THREE.MathUtils.clamp(
+        shoulderRingIndex - frontLegRingWindow,
+        0,
+        spineRingMax
+      );
+      const frontBandMax = THREE.MathUtils.clamp(
+        shoulderRingIndex + frontLegRingWindow,
+        0,
+        spineRingMax
+      );
+      const rumpReferenceMatch = (() => {
+        const hipPosition =
+          samplePosition('back_left_hip') || samplePosition('back_right_hip');
+        if (hipPosition) {
+          return findClosestRingIndex(hipPosition, 0, spineRingMax);
+        }
+        return spineBaseMatch;
+      })();
+      const rumpRingIndex = rumpReferenceMatch.ringIndex;
+      const rearBandMin = THREE.MathUtils.clamp(
+        rumpRingIndex - rearLegRingWindow,
+        0,
+        rearLegMaxRingIndex
+      );
+      const rearBandMax = THREE.MathUtils.clamp(
+        rumpRingIndex + rearLegRingWindow,
+        rearBandMin,
+        rearLegMaxRingIndex
+      );
       const getLegRingMatch = (boneName, fallbackIndex, minRingIndex, maxRingIndex) => {
         const bonePosition = samplePosition(boneName);
         return bonePosition
@@ -843,27 +890,27 @@ export class GiraffeGenerator {
       };
       const frontLeftMatch = getLegRingMatch(
         'front_left_shoulder',
-        frontLegMaxRingIndex,
-        0,
-        spineRingMax
+        shoulderRingIndex,
+        frontBandMin,
+        frontBandMax
       );
       const frontRightMatch = getLegRingMatch(
         'front_right_shoulder',
-        frontLegMaxRingIndex,
-        0,
-        spineRingMax
+        shoulderRingIndex,
+        frontBandMin,
+        frontBandMax
       );
       const backLeftMatch = getLegRingMatch(
         'back_left_hip',
-        rearLegMaxRingIndex,
-        0,
-        rearLegMaxRingIndex
+        rumpRingIndex,
+        rearBandMin,
+        rearBandMax
       );
       const backRightMatch = getLegRingMatch(
         'back_right_hip',
-        rearLegMaxRingIndex,
-        0,
-        rearLegMaxRingIndex
+        rumpRingIndex,
+        rearBandMin,
+        rearBandMax
       );
       const frontLeftRingIndex = frontLeftMatch.ringIndex;
       const frontRightRingIndex = frontRightMatch.ringIndex;
@@ -872,6 +919,9 @@ export class GiraffeGenerator {
       const frontRingIndex = Math.round((frontLeftRingIndex + frontRightRingIndex) * 0.5);
       const rearRingIndex = Math.round((backLeftRingIndex + backRightRingIndex) * 0.5);
       const legRingSeparation = Math.abs(frontRingIndex - rearRingIndex);
+      const frontBandCenter = Math.round((frontBandMin + frontBandMax) * 0.5);
+      const rearBandCenter = Math.round((rearBandMin + rearBandMax) * 0.5);
+      const bandSeparation = Math.abs(frontBandCenter - rearBandCenter);
       const legBlendSeparationThreshold = Math.max(
         2,
         Math.round(neckRingsPerSegment * 1.25)
@@ -881,22 +931,37 @@ export class GiraffeGenerator {
         0,
         1
       );
+      const bandBlendSpanCap = THREE.MathUtils.clamp(
+        bandSeparation / Math.max(2, frontLegRingWindow + rearLegRingWindow),
+        0,
+        1
+      );
+      const blendedSpanCap = Math.min(legBlendSpanCap, bandBlendSpanCap);
       const frontBlendSpanScale = Math.min(
         legBranchBlendSpanScale.frontLeft,
-        legBlendSpanCap
+        blendedSpanCap
       );
       const frontRightBlendSpanScale = Math.min(
         legBranchBlendSpanScale.frontRight,
-        legBlendSpanCap
+        blendedSpanCap
       );
       const backLeftBlendSpanScale = Math.min(
         legBranchBlendSpanScale.backLeft,
-        legBlendSpanCap
+        blendedSpanCap
       );
       const backRightBlendSpanScale = Math.min(
         legBranchBlendSpanScale.backRight,
-        legBlendSpanCap
+        blendedSpanCap
       );
+      debugBlend.ringBands = {
+        shoulderRingIndex,
+        rumpRingIndex,
+        frontBand: [frontBandMin, frontBandMax],
+        rearBand: [rearBandMin, rearBandMax],
+        frontBandCenter,
+        rearBandCenter,
+        bandSeparation
+      };
 
       // Cap blend spans when front/rear ring indices are close to avoid overlap.
       blendLeg(
