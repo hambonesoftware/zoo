@@ -28,6 +28,7 @@ export class GiraffeCreature extends THREE.Group {
 
     const { mesh } = GiraffeGenerator.generate(this.skeleton, generatorOptions);
     this.mesh = mesh;
+    this.debugBlend = mesh.userData?.debugBlend ?? null;
 
     this.behavior = new GiraffeBehavior(this.skeleton, this.mesh, {
       idle: options.idle,
