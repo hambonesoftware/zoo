@@ -7,6 +7,10 @@ import { generateHeadGeometry } from '../bodyParts/HeadGenerator.js';
 import { generateTailGeometry } from '../bodyParts/TailGenerator.js';
 import { generateNoseGeometry } from '../bodyParts/NoseGenerator.js';
 import { generateLimbGeometry } from '../bodyParts/LimbGenerator.js';
+import {
+  projectLegRootRingVertices,
+  sampleTorsoRingSurface
+} from '../bodyParts/BranchBlendUtils.js';
 import { mergeGeometries } from '../../libs/BufferGeometryUtils.js';
 import { ElephantBehavior } from './ElephantBehavior.js';
 
@@ -23,6 +27,11 @@ export class ElephantGenerator {
     // ------------------------------------------------------------
     const lowPoly = options.lowPoly === true;
     const debugVolumes = options.debugVolumes !== false;
+    const enableBranchBlending = options.enableBranchBlending === true;
+    const branchBlendOffset =
+      typeof options.branchBlendOffset === 'number' ? options.branchBlendOffset : 0.02;
+    const branchBlendSpan =
+      typeof options.branchBlendSpan === 'number' ? options.branchBlendSpan : 0.22;
 
     // Optional torso-specific low-poly controls
     const lowPolyTorsoSegments =
@@ -232,7 +241,7 @@ export class ElephantGenerator {
     const torsoSides = torsoSidesOverride ?? 28;
     const torsoLowPolySegments = torsoLowPolySegmentsOverride ?? lowPolyTorsoSegments;
 
-    const torsoGeometry = generateTorsoGeometry(skeleton, {
+    const torsoResult = generateTorsoGeometry(skeleton, {
       bones: ['spine_base', 'spine_mid', 'spine_neck'],
       // [hips, ribcage, neck base]
       radii: [1.15 * headScale * torsoRadiusScale, 1.35 * torsoRadiusScale, 1.0 * headScale * torsoRadiusScale],
@@ -254,8 +263,11 @@ export class ElephantGenerator {
       },
       lowPoly,
       lowPolySegments: lowPoly ? torsoLowPolySegments : undefined,
-      lowPolyWeldTolerance: lowPoly ? lowPolyTorsoWeldTolerance : 0
+      lowPolyWeldTolerance: lowPoly ? lowPolyTorsoWeldTolerance : 0,
+      includeRingData: enableBranchBlending
     });
+    const torsoGeometry = enableBranchBlending ? torsoResult.geometry : torsoResult;
+    const torsoRingData = enableBranchBlending ? torsoResult.ringData : null;
 
     // === 2. NECK (Front torso ring -> head base) ===
     // Separate neck segment from spine_neck to head.
@@ -390,7 +402,9 @@ export class ElephantGenerator {
 
 
     // === 8. LEGS (Pillars) ===
-    const limbSides = limbSidesOverride ?? (lowPoly ? legSidesLowPoly : 20);
+    const limbSides =
+      limbSidesOverride ??
+      (enableBranchBlending ? torsoSides : lowPoly ? legSidesLowPoly : 20);
     const legConfig = {
       sides: limbSides,
       rings: limbRings,
@@ -484,6 +498,289 @@ export class ElephantGenerator {
       ...legConfig
     });
 
+    const blendGeometry = [];
+    if (enableBranchBlending && torsoRingData && torsoRingData.rings > 1) {
+      const torsoSegments = torsoRingData.segments;
+
+      const getLegRootIndices = () =>
+        Array.from({ length: torsoSegments }, (_, i) => i);
+
+      const getRingCenterFromGeometry = (geometry, indices) => {
+        const positionAttr = geometry.getAttribute('position');
+        const center = new THREE.Vector3();
+        if (!positionAttr || indices.length === 0) return center;
+        indices.forEach((index) => {
+          center.add(new THREE.Vector3().fromBufferAttribute(positionAttr, index));
+        });
+        return center.multiplyScalar(1 / indices.length);
+      };
+
+      const findClosestRingIndex = (target) => {
+        let bestIndex = 0;
+        let bestDist = Infinity;
+        torsoRingData.ringCenters.forEach((center, index) => {
+          const dist = center.distanceToSquared(target);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestIndex = index;
+          }
+        });
+        return bestIndex;
+      };
+
+      const clampRingIndex = (index) =>
+        THREE.MathUtils.clamp(index, 0, torsoRingData.rings - 2);
+
+      const collectRingSegments = (centerSegment, span) => {
+        const segments = [];
+        const halfSpan = Math.max(1, Math.floor(span / 2));
+        for (let offset = -halfSpan; offset <= halfSpan; offset += 1) {
+          segments.push((centerSegment + offset + torsoSegments) % torsoSegments);
+        }
+        return segments;
+      };
+
+      const removeTorsoFaces = (ringIndex, segmentIndices) => {
+        const bandIndex = clampRingIndex(ringIndex);
+        const ringStart = torsoRingData.ringStarts[bandIndex];
+        const nextRingStart = torsoRingData.ringStarts[bandIndex + 1];
+        if (ringStart === undefined || nextRingStart === undefined) return;
+
+        const removeSet = new Set();
+        segmentIndices.forEach((segment) => {
+          const next = (segment + 1) % torsoSegments;
+          const a = ringStart + segment;
+          const b = ringStart + next;
+          const c = nextRingStart + next;
+          const d = nextRingStart + segment;
+          const key1 = [a, b, d].sort((x, y) => x - y).join(',');
+          const key2 = [b, c, d].sort((x, y) => x - y).join(',');
+          removeSet.add(key1);
+          removeSet.add(key2);
+        });
+
+        const indexAttr = torsoGeometry.getIndex();
+        if (!indexAttr) return;
+        const oldIndices = Array.from(indexAttr.array);
+        const newIndices = [];
+        for (let i = 0; i < oldIndices.length; i += 3) {
+          const tri = [oldIndices[i], oldIndices[i + 1], oldIndices[i + 2]];
+          const key = tri.slice().sort((x, y) => x - y).join(',');
+          if (!removeSet.has(key)) {
+            newIndices.push(...tri);
+          }
+        }
+        torsoGeometry.setIndex(newIndices);
+      };
+
+      const buildBridgeGeometry = (
+        legGeometry,
+        legRootIndices,
+        ringIndex,
+        segmentIndices,
+        legSegmentOffset
+      ) => {
+        const bandIndex = clampRingIndex(ringIndex);
+        const ringStart = torsoRingData.ringStarts[bandIndex];
+        const nextRingStart = torsoRingData.ringStarts[bandIndex + 1];
+        if (ringStart === undefined || nextRingStart === undefined) return null;
+
+        const torsoPosition = torsoGeometry.getAttribute('position');
+        const torsoUv = torsoGeometry.getAttribute('uv');
+        const torsoSkinIndex = torsoGeometry.getAttribute('skinIndex');
+        const torsoSkinWeight = torsoGeometry.getAttribute('skinWeight');
+
+        const legPosition = legGeometry.getAttribute('position');
+        const legUv = legGeometry.getAttribute('uv');
+        const legSkinIndex = legGeometry.getAttribute('skinIndex');
+        const legSkinWeight = legGeometry.getAttribute('skinWeight');
+
+        const positions = [];
+        const uvs = [];
+        const skinIndices = [];
+        const skinWeights = [];
+
+        const pushVertex = (attrSet, index) => {
+          positions.push(
+            attrSet.position.getX(index),
+            attrSet.position.getY(index),
+            attrSet.position.getZ(index)
+          );
+          if (attrSet.uv) {
+            uvs.push(attrSet.uv.getX(index), attrSet.uv.getY(index));
+          } else {
+            uvs.push(0, 0);
+          }
+          if (attrSet.skinIndex && attrSet.skinWeight) {
+            skinIndices.push(
+              attrSet.skinIndex.getX(index),
+              attrSet.skinIndex.getY(index),
+              attrSet.skinIndex.getZ(index),
+              attrSet.skinIndex.getW(index)
+            );
+            skinWeights.push(
+              attrSet.skinWeight.getX(index),
+              attrSet.skinWeight.getY(index),
+              attrSet.skinWeight.getZ(index),
+              attrSet.skinWeight.getW(index)
+            );
+          } else {
+            skinIndices.push(0, 0, 0, 0);
+            skinWeights.push(1, 0, 0, 0);
+          }
+        };
+
+        const addQuad = (a, b, c, d) => {
+          pushVertex(a.source, a.index);
+          pushVertex(b.source, b.index);
+          pushVertex(d.source, d.index);
+          pushVertex(b.source, b.index);
+          pushVertex(c.source, c.index);
+          pushVertex(d.source, d.index);
+        };
+
+        segmentIndices.forEach((segment) => {
+          const next = (segment + 1) % torsoSegments;
+          const legSegment = (segment + legSegmentOffset + torsoSegments) % torsoSegments;
+          const legNext = (legSegment + 1) % torsoSegments;
+
+          const torsoCurrent = ringStart + segment;
+          const torsoNext = ringStart + next;
+          const torsoUpperCurrent = nextRingStart + segment;
+          const torsoUpperNext = nextRingStart + next;
+
+          const legCurrent = legRootIndices[legSegment];
+          const legNextIndex = legRootIndices[legNext];
+
+          addQuad(
+            { source: { position: torsoPosition, uv: torsoUv, skinIndex: torsoSkinIndex, skinWeight: torsoSkinWeight }, index: torsoCurrent },
+            { source: { position: torsoPosition, uv: torsoUv, skinIndex: torsoSkinIndex, skinWeight: torsoSkinWeight }, index: torsoNext },
+            { source: { position: legPosition, uv: legUv, skinIndex: legSkinIndex, skinWeight: legSkinWeight }, index: legNextIndex },
+            { source: { position: legPosition, uv: legUv, skinIndex: legSkinIndex, skinWeight: legSkinWeight }, index: legCurrent }
+          );
+
+          addQuad(
+            { source: { position: legPosition, uv: legUv, skinIndex: legSkinIndex, skinWeight: legSkinWeight }, index: legCurrent },
+            { source: { position: legPosition, uv: legUv, skinIndex: legSkinIndex, skinWeight: legSkinWeight }, index: legNextIndex },
+            { source: { position: torsoPosition, uv: torsoUv, skinIndex: torsoSkinIndex, skinWeight: torsoSkinWeight }, index: torsoUpperNext },
+            { source: { position: torsoPosition, uv: torsoUv, skinIndex: torsoSkinIndex, skinWeight: torsoSkinWeight }, index: torsoUpperCurrent }
+          );
+        });
+
+        const bridgeGeometry = new THREE.BufferGeometry();
+        bridgeGeometry.setAttribute(
+          'position',
+          new THREE.Float32BufferAttribute(positions, 3)
+        );
+        bridgeGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        bridgeGeometry.setAttribute(
+          'skinIndex',
+          new THREE.Uint16BufferAttribute(skinIndices, 4)
+        );
+        bridgeGeometry.setAttribute(
+          'skinWeight',
+          new THREE.Float32BufferAttribute(skinWeights, 4)
+        );
+        bridgeGeometry.computeVertexNormals();
+        return bridgeGeometry;
+      };
+
+      const blendLeg = (legGeometry, legBones, targetBoneName) => {
+        if (limbSides !== torsoSegments) {
+          return;
+        }
+
+        const legRootIndices = getLegRootIndices();
+        const legRootCenter = getRingCenterFromGeometry(legGeometry, legRootIndices);
+        const targetPosition = sampleBonePosition(targetBoneName) || legRootCenter;
+        const ringIndex = findClosestRingIndex(targetPosition);
+
+        const torsoRing = sampleTorsoRingSurface(torsoGeometry, torsoRingData, ringIndex);
+        const legDirection = (() => {
+          const root = sampleBonePosition(legBones[0]);
+          const next = sampleBonePosition(legBones[1]);
+          if (root && next) {
+            return next.clone().sub(root);
+          }
+          return legRootCenter.clone().sub(torsoRing.center);
+        })();
+
+        projectLegRootRingVertices(
+          legGeometry,
+          legRootIndices,
+          torsoRing,
+          legDirection,
+          branchBlendOffset
+        );
+
+        const toLeg = legRootCenter.clone().sub(torsoRing.center);
+        const toLegPlane = toLeg
+          .clone()
+          .sub(torsoRing.tangent.clone().multiplyScalar(toLeg.dot(torsoRing.tangent)));
+        const planeDir =
+          toLegPlane.lengthSq() > 1e-6 ? toLegPlane.normalize() : torsoRing.normal.clone();
+
+        const angle = Math.atan2(
+          planeDir.dot(torsoRing.binormal),
+          planeDir.dot(torsoRing.normal)
+        );
+        const normalizedAngle = (angle < 0 ? angle + Math.PI * 2 : angle) / (Math.PI * 2);
+        const centerSegment = Math.round(normalizedAngle * torsoSegments) % torsoSegments;
+
+        const blendSpan = THREE.MathUtils.clamp(branchBlendSpan, 0.05, 1);
+        const span = Math.min(
+          torsoSegments,
+          Math.max(3, Math.round(torsoSegments * blendSpan))
+        );
+        const segmentIndices = collectRingSegments(centerSegment, span);
+
+        let legCenterSegment = 0;
+        let bestDot = -Infinity;
+        for (let i = 0; i < legRootIndices.length; i += 1) {
+          const index = legRootIndices[i];
+          const position = new THREE.Vector3().fromBufferAttribute(
+            legGeometry.getAttribute('position'),
+            index
+          );
+          const legDir = position.clone().sub(legRootCenter);
+          if (legDir.lengthSq() > 1e-6) {
+            const dot = legDir.normalize().dot(planeDir);
+            if (dot > bestDot) {
+              bestDot = dot;
+              legCenterSegment = i;
+            }
+          }
+        }
+
+        const legSegmentOffset =
+          (legCenterSegment - centerSegment + torsoSegments) % torsoSegments;
+
+        removeTorsoFaces(ringIndex, segmentIndices);
+
+        const bridge = buildBridgeGeometry(
+          legGeometry,
+          legRootIndices,
+          ringIndex,
+          segmentIndices,
+          legSegmentOffset
+        );
+        if (bridge) {
+          blendGeometry.push(bridge);
+        }
+      };
+
+      blendLeg(fl, ['front_left_collarbone', 'front_left_upper'], 'spine_mid');
+      blendLeg(fr, ['front_right_collarbone', 'front_right_upper'], 'spine_mid');
+      blendLeg(bl, ['back_left_pelvis', 'back_left_upper'], 'spine_base');
+      blendLeg(br, ['back_right_pelvis', 'back_right_upper'], 'spine_base');
+
+      torsoGeometry.computeVertexNormals();
+      fl.computeVertexNormals();
+      fr.computeVertexNormals();
+      bl.computeVertexNormals();
+      br.computeVertexNormals();
+    }
+
     // === Merge ===
     // BufferGeometryUtils requires that all geometries share the same
     // attributes and index state. The procedural body parts above were
@@ -546,7 +843,8 @@ export class ElephantGenerator {
         fl,
         fr,
         bl,
-        br
+        br,
+        ...blendGeometry
       ].map(prepareForMerge),
       false
     );
