@@ -395,8 +395,21 @@ export class GiraffeGenerator {
     );
 
     const blendGeometry = [];
+    const debugBlend = {};
     if (enableBranchBlending && spineNeckRingData && spineNeckRingData.rings > 1) {
       const torsoSegments = spineNeckRingData.segments;
+      const ringAxisDistances = (() => {
+        const centers = spineNeckRingData.ringCenters || [];
+        const distances = [];
+        let total = 0;
+        centers.forEach((center, index) => {
+          if (index > 0) {
+            total += center.distanceTo(centers[index - 1]);
+          }
+          distances.push(total);
+        });
+        return distances;
+      })();
 
       const getLegRootIndices = () =>
         Array.from({ length: torsoSegments }, (_, i) => i);
@@ -624,6 +637,7 @@ export class GiraffeGenerator {
       };
 
       const blendLeg = (
+        legName,
         legGeometry,
         legBones,
         ringIndex,
@@ -711,6 +725,18 @@ export class GiraffeGenerator {
 
         const legSegmentOffset =
           (legCenterSegment - centerSegment + torsoSegments) % torsoSegments;
+
+        debugBlend[legName] = {
+          ringIndex: clampedRingIndex,
+          centerSegment,
+          legRootCenter: legRootCenter.toArray(),
+          torsoRingCenter: torsoRing.center.toArray(),
+          planeDir: planeDir.toArray(),
+          blendSpanScale,
+          span,
+          legSegmentOffset,
+          axisDistance: ringAxisDistances[clampedRingIndex] ?? null
+        };
 
         removeTorsoFaces(clampedRingIndex, segmentIndices);
 
@@ -821,6 +847,7 @@ export class GiraffeGenerator {
 
       // Cap blend spans when front/rear ring indices are close to avoid overlap.
       blendLeg(
+        'frontLeft',
         fl,
         ['front_left_shoulder', 'front_left_upper'],
         frontLeftRingIndex,
@@ -829,6 +856,7 @@ export class GiraffeGenerator {
         frontLegMaxRingIndex
       );
       blendLeg(
+        'frontRight',
         fr,
         ['front_right_shoulder', 'front_right_upper'],
         frontRightRingIndex,
@@ -837,6 +865,7 @@ export class GiraffeGenerator {
         frontLegMaxRingIndex
       );
       blendLeg(
+        'backLeft',
         bl,
         ['back_left_hip', 'back_left_upper'],
         backLeftRingIndex,
@@ -845,6 +874,7 @@ export class GiraffeGenerator {
         rearLegMaxRingIndex
       );
       blendLeg(
+        'backRight',
         br,
         ['back_right_hip', 'back_right_upper'],
         backRightRingIndex,
@@ -935,6 +965,7 @@ export class GiraffeGenerator {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.bind(skeleton);
+    mesh.userData.debugBlend = Object.keys(debugBlend).length ? debugBlend : null;
 
     return { mesh, behavior: null };
   }

@@ -285,6 +285,7 @@ export function createWorld(
     if (activeAnimal && activeAnimal.root && activeAnimal.root.behavior) {
       info.behavior = activeAnimal.root.behavior;
     }
+    info.debugBlend = activeAnimal?.root?.debugBlend ?? null;
 
     return info;
   }

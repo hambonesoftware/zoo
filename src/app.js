@@ -527,6 +527,10 @@ class App {
         <div>Bounds (L×W×H m): <span class="value" id="zoo-debug-bounds">-</span></div>
         <div>Behavior: <span class="value" id="zoo-debug-behavior">-</span></div>
         <div>State time: <span class="value" id="zoo-debug-state-time">0.000</span></div>
+        <div>FL blend: <span class="value" id="zoo-debug-blend-fl">-</span></div>
+        <div>FR blend: <span class="value" id="zoo-debug-blend-fr">-</span></div>
+        <div>BL blend: <span class="value" id="zoo-debug-blend-bl">-</span></div>
+        <div>BR blend: <span class="value" id="zoo-debug-blend-br">-</span></div>
         <button id="zoo-debug-export-obj" type="button">Export OBJ (debug)</button>
         <button id="zoo-debug-export-tuning" type="button">Export Tuning JSON</button>
         <button id="zoo-debug-export-preset" type="button">Export Preset Bundle</button>
@@ -541,7 +545,11 @@ class App {
       dt: document.getElementById('zoo-debug-dt'),
       bounds: document.getElementById('zoo-debug-bounds'),
       behavior: document.getElementById('zoo-debug-behavior'),
-      stateTime: document.getElementById('zoo-debug-state-time')
+      stateTime: document.getElementById('zoo-debug-state-time'),
+      blendFrontLeft: document.getElementById('zoo-debug-blend-fl'),
+      blendFrontRight: document.getElementById('zoo-debug-blend-fr'),
+      blendBackLeft: document.getElementById('zoo-debug-blend-bl'),
+      blendBackRight: document.getElementById('zoo-debug-blend-br')
     };
 
     this.debugExportButton = document.getElementById('zoo-debug-export-obj');
@@ -640,6 +648,16 @@ class App {
     if (this.debugFields) {
       const info = this.world && this.world.getDebugInfo ? this.world.getDebugInfo() : {};
       const pensCount = info.penCount ?? 1;
+      const debugBlend = info.debugBlend || {};
+      const formatBlend = (label, data) => {
+        if (!data) return '-';
+        const ring = Number.isFinite(data.ringIndex) ? data.ringIndex : '-';
+        const segment = Number.isFinite(data.centerSegment) ? data.centerSegment : '-';
+        const span = Number.isFinite(data.span) ? data.span : '-';
+        const axis =
+          typeof data.axisDistance === 'number' ? data.axisDistance.toFixed(2) : '-';
+        return `${label} ring/seg:${ring}/${segment} span:${span} axis:${axis}`;
+      };
 
       if (this.debugFields.animal) {
         this.debugFields.animal.textContent = info.animalType || 'unknown';
@@ -667,6 +685,31 @@ class App {
         const beh = info.behavior;
         const t = beh && typeof beh.time === 'number' ? beh.time : 0;
         this.debugFields.stateTime.textContent = t.toFixed(3);
+      }
+
+      if (this.debugFields.blendFrontLeft) {
+        this.debugFields.blendFrontLeft.textContent = formatBlend(
+          'FL',
+          debugBlend.frontLeft
+        );
+      }
+      if (this.debugFields.blendFrontRight) {
+        this.debugFields.blendFrontRight.textContent = formatBlend(
+          'FR',
+          debugBlend.frontRight
+        );
+      }
+      if (this.debugFields.blendBackLeft) {
+        this.debugFields.blendBackLeft.textContent = formatBlend(
+          'BL',
+          debugBlend.backLeft
+        );
+      }
+      if (this.debugFields.blendBackRight) {
+        this.debugFields.blendBackRight.textContent = formatBlend(
+          'BR',
+          debugBlend.backRight
+        );
       }
     }
   }
