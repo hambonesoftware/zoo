@@ -515,16 +515,54 @@ export class ElephantGenerator {
         return center.multiplyScalar(1 / indices.length);
       };
 
+      const ringCenters = torsoRingData.ringCenters;
+      const ringAxisDistances = (() => {
+        const distances = [0];
+        for (let i = 1; i < ringCenters.length; i += 1) {
+          distances[i] =
+            distances[i - 1] + ringCenters[i].distanceTo(ringCenters[i - 1]);
+        }
+        return distances;
+      })();
+
       const findClosestRingIndex = (target) => {
+        let bestAxisDistance = 0;
+        let bestDistanceSq = Infinity;
+
+        for (let i = 0; i < ringCenters.length - 1; i += 1) {
+          const start = ringCenters[i];
+          const end = ringCenters[i + 1];
+          const segment = end.clone().sub(start);
+          const segmentLengthSq = segment.lengthSq();
+          if (segmentLengthSq < 1e-8) {
+            continue;
+          }
+          const toTarget = target.clone().sub(start);
+          const t = THREE.MathUtils.clamp(
+            toTarget.dot(segment) / segmentLengthSq,
+            0,
+            1
+          );
+          const projection = start.clone().add(segment.multiplyScalar(t));
+          const distanceSq = projection.distanceToSquared(target);
+          if (distanceSq < bestDistanceSq) {
+            bestDistanceSq = distanceSq;
+            bestAxisDistance =
+              ringAxisDistances[i] +
+              Math.sqrt(segmentLengthSq) * t;
+          }
+        }
+
         let bestIndex = 0;
-        let bestDist = Infinity;
-        torsoRingData.ringCenters.forEach((center, index) => {
-          const dist = center.distanceToSquared(target);
-          if (dist < bestDist) {
-            bestDist = dist;
+        let bestAxisDelta = Infinity;
+        ringAxisDistances.forEach((axisDistance, index) => {
+          const delta = Math.abs(axisDistance - bestAxisDistance);
+          if (delta < bestAxisDelta) {
+            bestAxisDelta = delta;
             bestIndex = index;
           }
         });
+
         return bestIndex;
       };
 
@@ -685,13 +723,13 @@ export class ElephantGenerator {
         return bridgeGeometry;
       };
 
-      const blendLeg = (legGeometry, legBones, targetBoneName) => {
+      const blendLeg = (legGeometry, legBones, targetBoneName, blendSpanOverride) => {
         if (limbSides !== torsoSegments) {
           return;
         }
 
         const legRootIndices = getLegRootIndices();
-        const legRootCenter = getRingCenterFromGeometry(legGeometry, legRootIndices);
+        let legRootCenter = getRingCenterFromGeometry(legGeometry, legRootIndices);
         const targetPosition = sampleBonePosition(targetBoneName) || legRootCenter;
         const ringIndex = findClosestRingIndex(targetPosition);
 
@@ -713,6 +751,8 @@ export class ElephantGenerator {
           branchBlendOffset
         );
 
+        legRootCenter = getRingCenterFromGeometry(legGeometry, legRootIndices);
+
         const toLeg = legRootCenter.clone().sub(torsoRing.center);
         const toLegPlane = toLeg
           .clone()
@@ -727,7 +767,11 @@ export class ElephantGenerator {
         const normalizedAngle = (angle < 0 ? angle + Math.PI * 2 : angle) / (Math.PI * 2);
         const centerSegment = Math.round(normalizedAngle * torsoSegments) % torsoSegments;
 
-        const blendSpan = THREE.MathUtils.clamp(branchBlendSpan, 0.05, 1);
+        const blendSpan = THREE.MathUtils.clamp(
+          blendSpanOverride ?? branchBlendSpan,
+          0.05,
+          1
+        );
         const span = Math.min(
           torsoSegments,
           Math.max(3, Math.round(torsoSegments * blendSpan))
@@ -769,10 +813,22 @@ export class ElephantGenerator {
         }
       };
 
+      const rearBlendSpan = Math.min(branchBlendSpan, 0.16);
+
       blendLeg(fl, ['front_left_collarbone', 'front_left_upper'], 'spine_mid');
       blendLeg(fr, ['front_right_collarbone', 'front_right_upper'], 'spine_mid');
-      blendLeg(bl, ['back_left_pelvis', 'back_left_upper'], 'spine_base');
-      blendLeg(br, ['back_right_pelvis', 'back_right_upper'], 'spine_base');
+      blendLeg(
+        bl,
+        ['back_left_pelvis', 'back_left_upper'],
+        'back_left_pelvis',
+        rearBlendSpan
+      );
+      blendLeg(
+        br,
+        ['back_right_pelvis', 'back_right_upper'],
+        'back_right_pelvis',
+        rearBlendSpan
+      );
 
       torsoGeometry.computeVertexNormals();
       fl.computeVertexNormals();
