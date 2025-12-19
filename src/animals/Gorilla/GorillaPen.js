@@ -17,7 +17,7 @@ export class GorillaPen {
     this.label = 'Gorilla';
 
     this.radius = options.radius || 2.0;
-    this.padHeight = options.padHeight || 0.17;
+    this.padHeight = options.padHeight || 0.2;
     this.markerRadius = options.markerRadius || 0.13;
     this.markerHeight = options.markerHeight || 0.13;
     this.markerColor = options.markerColor || 0x227bc4;

@@ -4,9 +4,9 @@ import * as THREE from 'three';
 import { ElephantCreature } from './ElephantCreature.js';
 import { ElephantDefinition } from './ElephantDefinition.js';
 
-const DEFAULT_PAD_HEIGHT = 0.17;
+const DEFAULT_PAD_HEIGHT = 0.2;
 const DEFAULT_PEN_RADIUS = 3.5;
-const DEFAULT_Y_OFFSET = DEFAULT_PAD_HEIGHT + 1.2; // padHeight (0.17) + elephant base height (~1.2)
+const DEFAULT_Y_OFFSET = DEFAULT_PAD_HEIGHT + 1.2; // padHeight (0.2) + elephant base height (~1.2)
 const TUNING_SCHEMA_VERSION = '1.1.0';
 const BONE_OFFSET_PREFIX = 'boneOffset';
 

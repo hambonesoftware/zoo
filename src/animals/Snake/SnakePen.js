@@ -16,7 +16,7 @@ export class SnakePen {
 
     this.pen = new AnimalStudioPen(scene, {
       radius: options.radius || 3.0,
-      padHeight: options.padHeight || 0.17,
+      padHeight: options.padHeight || 0.2,
       markerRadius: options.markerRadius || 0.13,
       markerHeight: options.markerHeight || 0.13,
       markerColor: options.markerColor || 0x227bc4,
