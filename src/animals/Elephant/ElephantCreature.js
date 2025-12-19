@@ -9,6 +9,8 @@ export class ElephantCreature extends THREE.Group {
   constructor(options = {}) {
     super();
 
+    this._skeletonHelperMatrix = new THREE.Matrix4();
+
     // 1. Build Bones
     const definition = options.definition || ElephantDefinition;
     this.bones = this._buildBonesFromDefinition(definition.bones);
@@ -80,6 +82,7 @@ export class ElephantCreature extends THREE.Group {
     if (options.scale) {
       this.scale.setScalar(options.scale);
     }
+
   }
 
   _buildBonesFromDefinition(boneDefs) {
@@ -110,6 +113,7 @@ export class ElephantCreature extends THREE.Group {
     }
     this.updateMatrixWorld(true);
     if (this.skeletonHelper && this.skeletonHelper.visible) {
+      this._syncSkeletonHelperMatrix();
       this.skeletonHelper.updateMatrixWorld(true);
     }
     if (this.ringsOverlay) {
@@ -121,6 +125,7 @@ export class ElephantCreature extends THREE.Group {
     if (visible) {
       this._ensureSkeletonHelper();
       this.skeletonHelper.visible = true;
+      this._syncSkeletonHelperMatrix();
       this.skeletonHelper.updateMatrixWorld(true);
       return;
     }
@@ -144,5 +149,14 @@ export class ElephantCreature extends THREE.Group {
     this.skeletonHelper.material.depthWrite = false;
     this.skeletonHelper.material.toneMapped = false;
     this.add(this.skeletonHelper);
+    this._syncSkeletonHelperMatrix();
+  }
+
+  _syncSkeletonHelperMatrix() {
+    if (!this.skeletonHelper || !this.rootBone) return;
+    this._skeletonHelperMatrix.copy(this.matrixWorld).invert();
+    this.skeletonHelper.matrix.copy(
+      this._skeletonHelperMatrix.multiply(this.rootBone.matrixWorld)
+    );
   }
 }
