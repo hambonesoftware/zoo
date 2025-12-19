@@ -411,10 +411,22 @@ export class GiraffeGenerator {
       };
 
       const findClosestRingIndex = (target) => {
+        const ringCenters = spineNeckRingData.ringCenters;
+        if (!ringCenters || ringCenters.length === 0) return 0;
+        const axisStart = ringCenters[0];
+        const axisEnd = ringCenters[ringCenters.length - 1];
+        const axisDir = axisEnd.clone().sub(axisStart);
+        if (axisDir.lengthSq() < 1e-6) {
+          return 0;
+        }
+        axisDir.normalize();
+        const targetAxis = target.clone().sub(axisStart).dot(axisDir);
+
         let bestIndex = 0;
         let bestDist = Infinity;
-        spineNeckRingData.ringCenters.forEach((center, index) => {
-          const dist = center.distanceToSquared(target);
+        ringCenters.forEach((center, index) => {
+          const centerAxis = center.clone().sub(axisStart).dot(axisDir);
+          const dist = Math.abs(centerAxis - targetAxis);
           if (dist < bestDist) {
             bestDist = dist;
             bestIndex = index;
@@ -580,13 +592,13 @@ export class GiraffeGenerator {
         return bridgeGeometry;
       };
 
-      const blendLeg = (legGeometry, legBones, targetBoneName) => {
+      const blendLeg = (legGeometry, legBones, targetBoneName, blendSpanScale = 1) => {
         if (limbSides !== torsoSegments) {
           return;
         }
 
         const legRootIndices = getLegRootIndices();
-        const legRootCenter = getRingCenterFromGeometry(legGeometry, legRootIndices);
+        let legRootCenter = getRingCenterFromGeometry(legGeometry, legRootIndices);
         const targetPosition = samplePosition(targetBoneName) || legRootCenter;
         const ringIndex = findClosestRingIndex(targetPosition);
 
@@ -612,6 +624,7 @@ export class GiraffeGenerator {
           branchBlendOffset
         );
 
+        legRootCenter = getRingCenterFromGeometry(legGeometry, legRootIndices);
         const toLeg = legRootCenter.clone().sub(torsoRing.center);
         const toLegPlane = toLeg
           .clone()
@@ -626,7 +639,11 @@ export class GiraffeGenerator {
         const normalizedAngle = (angle < 0 ? angle + Math.PI * 2 : angle) / (Math.PI * 2);
         const centerSegment = Math.round(normalizedAngle * torsoSegments) % torsoSegments;
 
-        const blendSpan = THREE.MathUtils.clamp(branchBlendSpan, 0.05, 1);
+        const blendSpan = THREE.MathUtils.clamp(
+          branchBlendSpan * blendSpanScale,
+          0.05,
+          1
+        );
         const span = Math.min(
           torsoSegments,
           Math.max(3, Math.round(torsoSegments * blendSpan))
@@ -668,10 +685,10 @@ export class GiraffeGenerator {
         }
       };
 
-      blendLeg(fl, ['front_left_shoulder', 'front_left_upper'], 'spine_mid');
-      blendLeg(fr, ['front_right_shoulder', 'front_right_upper'], 'spine_mid');
-      blendLeg(bl, ['back_left_hip', 'back_left_upper'], 'spine_base');
-      blendLeg(br, ['back_right_hip', 'back_right_upper'], 'spine_base');
+      blendLeg(fl, ['front_left_shoulder', 'front_left_upper'], 'spine_mid', 1);
+      blendLeg(fr, ['front_right_shoulder', 'front_right_upper'], 'spine_mid', 1);
+      blendLeg(bl, ['back_left_hip', 'back_left_upper'], 'back_left_hip', 0.75);
+      blendLeg(br, ['back_right_hip', 'back_right_upper'], 'back_right_hip', 0.75);
 
       spineNeckGeometry.computeVertexNormals();
       fl.computeVertexNormals();
