@@ -16,6 +16,7 @@ export class CatCreature extends THREE.Group {
 
     // 2. Helper to set initial World Matrices
     const rootBone = this.bones.find(b => b.name === 'spine_base') || this.bones[0];
+    this.rootBone = rootBone;
     this.add(rootBone);
     this.updateMatrixWorld(true);
     
@@ -24,6 +25,8 @@ export class CatCreature extends THREE.Group {
     this.mesh = mesh;
     this.behavior = behavior; // You may need to adjust physics in Behavior for weight!
 
+    this.remove(this.rootBone);
+    this.mesh.add(this.rootBone);
     this.add(mesh);
 
     // 4. Debug / Skeleton visibility

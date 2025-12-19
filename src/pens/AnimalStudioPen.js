@@ -26,7 +26,7 @@ export class AnimalStudioPen {
     this.shadowNormalBias = options.shadowNormalBias;
 
     this.radius = options.radius || 2.0;
-    this.padHeight = options.padHeight || 0.17;
+    this.padHeight = options.padHeight || 0.2;
     this.markerRadius = options.markerRadius || 0.13;
     this.markerHeight = options.markerHeight || 0.13;
     this.markerColor = options.markerColor || 0x227bc4;
@@ -277,6 +277,7 @@ export class AnimalStudioPen {
       );
     }
 
+    this._alignAnimalToPad();
     this._refreshBoundingBoxHelper();
     this._applyHeroMaterials();
   }
@@ -310,6 +311,70 @@ export class AnimalStudioPen {
     this.bboxHelper.name = 'StudioBBoxHelper';
     this.bboxHelper.visible = this.showBoundingBox;
     this.group.add(this.bboxHelper);
+  }
+
+  _alignAnimalToPad() {
+    if (!this.animalRoot) return;
+
+    const bones = this._collectAnimalBones();
+    if (bones.length) {
+      this.animalRoot.updateMatrixWorld(true);
+      const tmp = new THREE.Vector3();
+      let minY = Infinity;
+      bones.forEach((bone) => {
+        if (!bone) return;
+        bone.getWorldPosition(tmp);
+        if (tmp.y < minY) minY = tmp.y;
+      });
+      if (Number.isFinite(minY)) {
+        const deltaY = this.padHeight - minY;
+        if (Math.abs(deltaY) > 1e-4) {
+          this.animalRoot.position.y += deltaY;
+          this.animalRoot.updateMatrixWorld(true);
+        }
+      }
+      return;
+    }
+
+    this._alignMeshToPadFallback();
+  }
+
+  _alignMeshToPadFallback() {
+    const box = this.animalRoot ? new THREE.Box3().setFromObject(this.animalRoot) : null;
+    if (!box || box.isEmpty()) return;
+    const deltaY = this.padHeight - box.min.y;
+    if (Math.abs(deltaY) > 1e-4) {
+      this.animalRoot.position.y += deltaY;
+      this.animalRoot.updateMatrixWorld(true);
+    }
+  }
+
+  _collectAnimalBones() {
+    const sources = [this.animal, this.animalRoot].filter(Boolean);
+    for (const source of sources) {
+      const bones = this._getBonesFromSource(source);
+      if (bones.length) return bones;
+    }
+    return [];
+  }
+
+  _getBonesFromSource(source) {
+    if (!source) return [];
+    if (source.skeleton?.bones?.length) return source.skeleton.bones;
+    if (Array.isArray(source.bones) && source.bones.length) return source.bones;
+    if (source.bonesByName) {
+      const values = source.bonesByName instanceof Map
+        ? Array.from(source.bonesByName.values())
+        : Object.values(source.bonesByName);
+      if (values.length) return values;
+    }
+
+    const collected = new Set();
+    if (source.rootBone) collected.add(source.rootBone);
+    if (Array.isArray(source.spineBones)) source.spineBones.forEach((bone) => collected.add(bone));
+    if (Array.isArray(source.tongueBones)) source.tongueBones.forEach((bone) => collected.add(bone));
+    if (source.headBone) collected.add(source.headBone);
+    return Array.from(collected);
   }
 
   _applyHeroMaterials() {

@@ -19,7 +19,7 @@ export class ElephantPen {
 
     this.pen = new AnimalStudioPen(scene, {
       radius: options.radius || 3.5,
-      padHeight: options.padHeight || 0.17,
+      padHeight: options.padHeight || 0.2,
       markerRadius: options.markerRadius || 0.13,
       markerHeight: options.markerHeight || 0.13,
       markerColor: options.markerColor || 0x227bc4,
@@ -71,8 +71,6 @@ export class ElephantPen {
       this.Elephant.mesh.receiveShadow = true;
     }
 
-    this._placeElephantOnGround();
-
     const environment = {
       enclosureCenter: new THREE.Vector3(0, this.pen.padHeight, 0),
       enclosureRadius: this.pen.radius,
@@ -87,20 +85,6 @@ export class ElephantPen {
     }
 
     this.pen.mountAnimal(this.Elephant);
-  }
-
-  _placeElephantOnGround() {
-    if (!this.Elephant) return;
-
-    this.Elephant.updateMatrixWorld(true);
-    const bbox = new THREE.Box3().setFromObject(this.Elephant);
-    if (bbox.isEmpty()) return;
-
-    const deltaY = this.pen.padHeight - bbox.min.y;
-    if (Math.abs(deltaY) > 1e-4) {
-      this.Elephant.position.y += deltaY;
-      this.Elephant.updateMatrixWorld(true);
-    }
   }
 
   fitCameraToElephant(camera, controls) {
