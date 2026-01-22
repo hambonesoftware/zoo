@@ -61,3 +61,8 @@ export function getProfileForAnimal(animalType) {
   const lookupKey = profileKeyMap[animalType] || animalType;
   return MUSIC_PROFILES[lookupKey] || null;
 }
+
+export function getProfileById(profileId) {
+  if (!profileId) return null;
+  return Object.values(MUSIC_PROFILES).find((profile) => profile.id === profileId) || null;
+}

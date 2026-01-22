@@ -6,7 +6,7 @@ import { SoundFontEngine } from './audio/SoundFontEngine.js';
 import { TheoryEngine } from './music/TheoryEngine.js';
 import { MusicEngine } from './music/MusicEngine.js';
 import { AnimalMusicBrain } from './music/AnimalMusicBrain.js';
-import { MIDI_CHANNEL_ASSIGNMENTS, getProfileForAnimal } from './music/MusicProfiles.js';
+import { MIDI_CHANNEL_ASSIGNMENTS, getProfileById, getProfileForAnimal } from './music/MusicProfiles.js';
 import { NoteHighway } from './ui/NoteHighway.js';
 import { downloadAsJSON, downloadAsOBJ } from './debug/exporters.js';
 import { TuningPanel } from './ui/TuningPanel.js';
@@ -52,6 +52,7 @@ class App {
     this.currentSchema = {};
     this.tuningHistory = { past: [], future: [], limit: 50 };
     this.schemaVersion = '1.0.0';
+    this.musicProfileOverrides = {};
 
     this.scene = this.world.scene;
     this.camera = this.world.camera;
@@ -72,6 +73,7 @@ class App {
     this.setupHistoryShortcuts();
     this.setupDebugPanel();
     this.setupExportHooks();
+    this.setupProgressionStyleSelector();
 
     // Bind event listeners
     window.addEventListener('resize', this.onWindowResize.bind(this));
@@ -117,6 +119,50 @@ class App {
       return profile.programNumber;
     }
     return 0;
+  }
+
+  getMusicProfileForAnimal(animalType) {
+    const base = getProfileForAnimal(animalType) || {};
+    const overrides = this.musicProfileOverrides[animalType] || {};
+    return { ...base, ...overrides };
+  }
+
+  normalizeMusicProfileOverrides(profile = {}) {
+    const overrides = {};
+    if (Array.isArray(profile.patternDegrees)) {
+      overrides.patternDegrees = profile.patternDegrees;
+    }
+    if (typeof profile.scaleName === 'string') {
+      overrides.scaleName = profile.scaleName;
+    }
+    if (typeof profile.rootMidiNote === 'number') {
+      overrides.rootMidiNote = profile.rootMidiNote;
+    }
+    if (typeof profile.tempoBPM === 'number') {
+      overrides.tempoBPM = profile.tempoBPM;
+    }
+    return overrides;
+  }
+
+  updateAnimalBrainProfile(animalType, profile) {
+    if (!this.musicEngine || !animalType) return;
+    const brain = this.musicEngine.animalBrains?.get?.(animalType);
+    if (brain?.updateProfile) {
+      brain.updateProfile(profile);
+      return;
+    }
+    this.musicEngine.registerAnimalBrain(animalType, new AnimalMusicBrain(profile));
+  }
+
+  updateMusicProfileForAnimal(animalType, profileUpdate = {}) {
+    if (!animalType) return;
+    const overrides = this.normalizeMusicProfileOverrides(profileUpdate);
+    if (!Object.keys(overrides).length) return;
+    this.musicProfileOverrides[animalType] = {
+      ...(this.musicProfileOverrides[animalType] || {}),
+      ...overrides
+    };
+    this.updateAnimalBrainProfile(animalType, this.getMusicProfileForAnimal(animalType));
   }
 
   createDefaultAudioSettings() {
@@ -806,10 +852,8 @@ class App {
   }
 
   refreshMusicForAnimal(animalType) {
-    const profile = getProfileForAnimal(animalType) || {};
-    if (this.musicEngine) {
-      this.musicEngine.registerAnimalBrain(animalType, new AnimalMusicBrain(profile));
-    }
+    const profile = this.getMusicProfileForAnimal(animalType);
+    this.updateAnimalBrainProfile(animalType, profile);
 
     this.applyInstrumentSelection(animalType);
     this.attachFootfallListener(animalType);
@@ -883,12 +927,44 @@ class App {
     if (!behavior || typeof behavior.setFootfallListener !== 'function') return;
 
     behavior.setFootfallListener((footfall) => {
+      const hasDegree = typeof footfall?.degree === 'number' || typeof footfall?.scaleDegree === 'number';
+      const brain = this.musicEngine.animalBrains?.get?.(animalType);
+      const audioTime = this.soundFontEngine?.getAudioContext?.()?.currentTime ?? 0;
+      const guided = !hasDegree && brain?.updateGuidedStep ? brain.updateGuidedStep(audioTime) : null;
+      const guidedDegree = guided?.allowedDegreesNow?.[0];
       const payload = {
         ...footfall,
         animalId: animalType,
-        instrumentProgram: this.getInstrumentSelection(animalType)
+        instrumentProgram: this.getInstrumentSelection(animalType),
+        ...(typeof guidedDegree === 'number' && !hasDegree ? { degree: guidedDegree } : {})
       };
       this.musicEngine.enqueueFootfallEvent(payload);
+    });
+  }
+
+  setupProgressionStyleSelector() {
+    const selector = document.getElementById('zoo-progression-style');
+    if (selector) {
+      selector.addEventListener('change', () => {
+        const profile = getProfileById(selector.value);
+        if (profile) {
+          this.updateMusicProfileForAnimal(this.currentAnimalType, profile);
+        }
+      });
+    }
+
+    window.addEventListener('zoo:progression-style-change', (event) => {
+      const detail = event?.detail || {};
+      const animalType = detail.animalType || this.currentAnimalType;
+      if (!animalType) return;
+      const profile =
+        detail.profile ||
+        getProfileById(detail.profileId || detail.styleId || detail.progressionId);
+      if (profile) {
+        this.updateMusicProfileForAnimal(animalType, profile);
+      } else if (detail.profileUpdate) {
+        this.updateMusicProfileForAnimal(animalType, detail.profileUpdate);
+      }
     });
   }
 }
