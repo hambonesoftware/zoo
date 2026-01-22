@@ -74,7 +74,8 @@ export class MusicEngine {
 
     const brain = this.animalBrains?.get?.(footfall.animalId);
     const profile = brain?.profile;
-    const midiNote = this.resolveMidiNote(footfall, profile);
+    const degree = this.resolveFootfallDegree(footfall, brain, audioTime);
+    const midiNote = this.resolveMidiNote(footfall, profile, degree);
     if (typeof midiNote !== 'number') return null;
 
     const gaitMetaSource =
@@ -102,9 +103,22 @@ export class MusicEngine {
     return getProfileForAnimal(animalId) || DEFAULT_PROFILE;
   }
 
-  resolveMidiNote(footfall, profile) {
+  resolveFootfallDegree(footfall, brain, audioTime) {
+    if (typeof footfall?.degree === 'number') return footfall.degree;
+    if (typeof footfall?.scaleDegree === 'number') return footfall.scaleDegree;
+    if (brain?.updateGuidedStep) {
+      const guided = brain.updateGuidedStep(audioTime);
+      const candidate = guided?.allowedDegreesNow?.[0];
+      if (typeof candidate === 'number') return candidate;
+    }
+    return 1;
+  }
+
+  resolveMidiNote(footfall, profile, degreeOverride) {
     if (typeof footfall.midiNote === 'number') return footfall.midiNote;
-    const degree = footfall.degree ?? footfall.scaleDegree ?? 1;
+    const degree = typeof degreeOverride === 'number'
+      ? degreeOverride
+      : footfall.degree ?? footfall.scaleDegree ?? 1;
     const activeProfile = profile || this.getFallbackProfile(footfall.animalId);
     const notes = this.theoryEngine?.scaleDegreesToMidiNotes(activeProfile, [degree]);
     if (Array.isArray(notes) && typeof notes[0] === 'number') return notes[0];

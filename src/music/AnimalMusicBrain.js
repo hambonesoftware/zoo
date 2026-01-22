@@ -19,6 +19,19 @@ export class AnimalMusicBrain {
     this.initialized = false;
   }
 
+  updateProfile(nextProfile = {}) {
+    this.profile = { ...(this.profile || {}), ...(nextProfile || {}) };
+    this.theory = {
+      scaleName: this.profile.scaleName,
+      rootMidiNote: this.profile.rootMidiNote
+    };
+    this.secondsPerBeat = 60 / (this.profile.tempoBPM || 120);
+    this.guided.currentStepIndex = -1;
+    this.guided.allowedDegreesNow = [];
+    this.guided.nextStepTime = 0;
+    this.initialized = false;
+  }
+
   updateGuidedStep(audioCtxTime) {
     if (!this.initialized) {
       this.guided.nextStepTime = audioCtxTime;
